@@ -80,7 +80,7 @@ Store the result as `repo_created` (true if repo was created, false if skipped).
 
 ---
 
-## Phase 0: Anchor Questions
+## Discovery Questions
 
 Ask these questions using AskUserQuestion, one at a time. They are the highest-signal inputs — most of the stack is inferred from them.
 
@@ -121,7 +121,7 @@ Options:
 - Go
 - Other
 
-*Skip A3 if A1 already makes the language unambiguous (e.g. if the user typed "Next.js" or "React" when answering A1, TypeScript/JS is implied). When in doubt, ask. Note the inferred language in the confirmation summary instead.*
+*Skip A3 if the language is already unambiguous from context — e.g. the user mentioned a JS/TS framework in A1 free-text, or A5 contains terms like "Next.js", "React", "Vue", "Svelte", or similar TS/JS framework names. When in doubt, ask. Note the inferred language in the confirmation summary instead.*
 
 Store as: **language**
 
@@ -145,7 +145,7 @@ This is passed verbatim to the research agent and used by the inference engine t
 
 ## Inference Engine
 
-After Phase 0, build a draft project profile by applying these rules before asking any more questions. Inferences are probabilistic — they go into the confirmation summary where the user can correct them. Do NOT ask about inferred items in Phase 1.
+After the Discovery Questions, build a draft project profile by applying these rules before asking any more questions. Inferences are probabilistic — they go into the project context document where the user can correct them. Do NOT ask about inferred items in the Detail Questions.
 
 ### Runtime + framework
 
@@ -154,15 +154,16 @@ After Phase 0, build a draft project profile by applying these rules before aski
 | SaaS / Marketplace / Internal tool | TypeScript | Vercel | Next.js (App Router), React, Turbopack |
 | SaaS / Marketplace / Internal tool | TypeScript | Railway / Fly.io | Next.js — note as assumption, confirm in summary |
 | SaaS / Marketplace / Internal tool | TypeScript | AWS / GCP / Azure / Self-hosted | Next.js or Express — note as assumption, confirm in summary |
-| SaaS / Marketplace / Internal tool | Python | any | FastAPI + Jinja2 (server-rendered) or FastAPI (API only — ask in Phase 1) |
+| SaaS / Marketplace / Internal tool | Python | any | FastAPI + Jinja2 (server-rendered) or FastAPI (API only — ask in Detail Questions) |
 | SaaS / Marketplace / Internal tool | Go | any | net/http (stdlib) + templ or htmx — note as assumption, confirm in summary |
-| Content site | TypeScript | Vercel | Next.js or Astro — note ambiguity, ask in Phase 1 |
+| Content site | TypeScript | Vercel | Next.js or Astro — note ambiguity, ask in Detail Questions |
+| Content site | TypeScript | any other | Astro (static-friendly) or Next.js — note ambiguity, ask in Detail Questions |
 | API service | TypeScript | any | Node + Hono (lightweight) |
 | API service | Python | any | FastAPI |
 | API service | Go | any | net/http (stdlib) |
 | Mobile app | TypeScript | — | Expo (React Native) |
 | Mobile app | other/unsure | — | Flutter |
-| (no match) | any | any | Cannot infer — ask user in Phase 1 which framework they prefer |
+| (no match) | any | any | Cannot infer — ask user in Detail Questions which framework they prefer |
 
 ### Bundler / build tool
 
@@ -201,7 +202,7 @@ After Phase 0, build a draft project profile by applying these rules before aski
 | MVP for real users | Standard tools; flag observability as recommended |
 | Production from day one | Full stack; treat error tracking + logging as required |
 
-### What is NEVER inferred (always ask in Phase 1)
+### What is NEVER inferred (always ask in Detail Questions)
 
 - Auth (product decision — can't derive from app type alone)
 - Database (might use external APIs instead)
@@ -214,9 +215,9 @@ After Phase 0, build a draft project profile by applying these rules before aski
 
 ---
 
-## Phase 1: Targeted Clarifiers
+## Detail Questions
 
-Ask ONLY questions the inference engine could not resolve. Skip any question whose answer is already known from Phase 0 or inference. A typical run is 5–8 questions. Never exceed 10.
+Ask ONLY questions the inference engine could not resolve. Skip any question whose answer is already known from the discovery questions or inference. A typical run is 5–8 questions. Never exceed 10.
 
 Use AskUserQuestion for each. Ask one at a time.
 
@@ -249,13 +250,13 @@ Options: Yes / No / Not sure
 Question: "Will the app have real-time features? (live updates, chat, collaborative editing)"
 Options: Yes / No / Not sure
 
-**External services**:
+**External services** (skip if app type is "Content site" and A5 shows no API/integration intent):
 Question: "Will the app connect to external services?"
 Options: Receive events from them (webhooks in) / Send data to them (API calls out) / Both / Neither
 
 Store as: **external_services**. Also derive: **webhooks_inbound** = true if answer includes "Receive events" or "Both".
 
-**Background work**:
+**Background work** (skip if app type is "Content site" and A5 shows no background-processing intent):
 Question: "Does your app need to run work outside of a user's request?"
 Description shown to user:
 - Scheduled / recurring tasks that run even when no user is active (e.g. nightly reports, cleanup jobs, digest emails)
@@ -278,49 +279,83 @@ Store answers as: **auth_needed**, **database_type**, **orm_needed**, **payments
 
 ---
 
-## Confirmation Summary
+## Project Context Document
 
-Before dispatching any subagent, present the complete inferred + answered profile in one message. Wait for explicit approval before continuing. The user can correct any row.
+Before dispatching any subagent, write a `PROJECT_CONTEXT.md` file to the project root. This file is passed verbatim to the research agent, validator agent, and every per-issue agent — it is their only source of truth about the project.
 
-Present the summary in this exact format (omit rows that don't apply to this project):
+### Generate PROJECT_CONTEXT.md
 
----
+Write the file using the template below. Fill every section from the collected variables. Do not leave placeholder text — derive real implications from the answers.
 
-Here's what I'm working with before I start researching. Correct anything that looks wrong — or say "looks good" to proceed.
+**Deployment constraint implications to derive (fill the Deployment section):**
+- Vercel Hobby → "Cron is limited to once per day. Any scheduled job needs an external service (e.g. QStash) or an upgrade to Pro."
+- Vercel Pro → "Edge functions, cron, and persistent workers available."
+- Railway → "Container-based. Persistent workers and real cron supported. No edge functions."
+- Fly.io → "Container-based, global regions. Persistent processes supported."
+- AWS / GCP / Azure → "Full infrastructure control. Set up CI/CD separately."
+- Self-hosted → "Full control. Responsible for uptime, SSL, and scaling."
+- Not decided → "No deployment constraints applied. Tool choices remain platform-agnostic."
 
-| Category | Value |
-|---|---|
-| Runtime | [e.g. Node 20 / Python 3.12 / Go 1.22] |
-| Framework | [e.g. Next.js 14 App Router / FastAPI / Expo] |
-| Language | TypeScript (strict) / Python (typed) / Go |
-| Bundler | [e.g. Turbopack / Vite / none] |
-| CSS | [e.g. Tailwind v4 / none] |
-| Testing | [e.g. Vitest + Playwright / pytest / stdlib] |
-| Auth | ✓ needed / ✗ not needed |
-| Database | [e.g. PostgreSQL (SQL) / MongoDB / none] |
-| ORM | ✓ needed / ✗ not needed |
-| Payments | ✓ needed / ✗ not needed |
-| Notifications | [e.g. email / push / none] |
-| File storage | ✓ needed / ✗ not needed |
-| Real-time | ✓ needed / ✗ not needed |
-| Webhooks | [e.g. inbound (Stripe events) / outbound / none] |
-| Background jobs | [e.g. scheduled + heavy processing / none] |
-| Observability | [e.g. error tracking + logging / none] |
-| Deployment | [e.g. Vercel / Railway / Fly.io] |
-| Output format | GitHub Issues / SETUP.md |
-| Guardrails (always on) | TypeScript strict, ESLint, Prettier, Husky + lint-staged |
+**Scale implications to derive (fill the Scale section):**
+- Prototype → "Prefer lightest tools. Skip observability unless explicitly requested. No enterprise tooling."
+- MVP for real users → "Standard tooling appropriate. Flag observability as strongly recommended."
+- Production from day one → "Full stack expected. Error tracking and structured logging are required, not optional."
 
----
+**Template:**
 
-If the user corrects a row: update the profile for that row and acknowledge the change in one line. Do NOT re-show the full summary unless they ask. Do NOT re-run inference.
+```markdown
+# Project Context
 
-Only after the user says "looks good", "yes", "proceed", or equivalent — continue to Phase 2.
+## What we're building
+[one_liner]. [1–2 sentences elaborating the core user flow derived from app_type + one_liner — write in plain English, not tech jargon.]
+
+## Deployment & constraints
+Target: [deploy_target].
+[Write the implication sentence derived from the table above. If there are feature-specific constraints (e.g. background jobs + Vercel Hobby), call them out explicitly here.]
+
+## Scale
+[scale]. [Write the implication sentence derived from the table above.]
+
+## Feature context
+[Write one bullet per feature that is needed. Skip features that are "not needed" or "no". For each, explain WHY it is needed (from the context of what the app does) and any constraint that affects tool choice.]
+
+- **Auth:** [yes/no] — [e.g. "Store owners need accounts to connect their Shopify shop. Social login (Google/GitHub) worth considering to reduce signup friction."]
+- **Database:** [type] — [e.g. "Stores audit results per shop and user account data. PostgreSQL chosen for relational structure."]
+- **Background jobs:** [type] — [e.g. "Weekly report emails + nightly audit scans. Given Vercel Hobby cron limit, QStash is the better fit over native Vercel Cron."]
+- **Email:** [yes/no and type] — [e.g. "Weekly reports are a core feature, not just transactional auth emails. Needs HTML templating support."]
+- **Payments:** [yes/no] — [e.g. "Not needed now but stub the integration — plan is to charge later. Choose a library that is easy to activate."]
+- **Webhooks:** [inbound/outbound/both/none] — [e.g. "Inbound from Stripe for payment events."]
+- **Real-time:** [yes/no] — [explain if yes]
+- **File storage:** [yes/no] — [explain if yes]
+- **Observability:** [what was selected] — [e.g. "Error tracking required — app runs unattended scans where silent failures are dangerous."]
+
+## Language & runtime
+[language], [runtime], [framework]. [Any notable constraint, e.g. "TypeScript strict mode throughout."]
+
+## Free tier requirement
+[If free tier was a stated preference:] Every tool must have a usable free tier. Flag anything paid-only.
+[If not stated:] No explicit free tier constraint. Prefer value-for-money over cheapest option.
+
+## Guardrails (always on)
+TypeScript strict, ESLint (current config for this framework), Prettier, Husky + lint-staged. These are non-negotiable and appear in every project regardless of other choices.
+```
+
+### Review gate
+
+After writing the file, tell the user:
+
+> "I've written `PROJECT_CONTEXT.md`. Please review it — edit anything that looks wrong or add context I missed — then say 'looks good' to start researching."
+
+If the user edits the file directly: re-read it before dispatching the research agent.
+If the user corrects something verbally: update the relevant section in the file, acknowledge the change in one line, do NOT rewrite the whole file.
+
+Only after explicit approval ("looks good", "yes", "proceed", or equivalent) — continue to the Research Agent.
 
 ---
 
 ## Phase 2: Research Agent
 
-Dispatch a single subagent using the Agent tool. Substitute the confirmed project profile into `[PROJECT_PROFILE]` before dispatching. Pass `context7_available` as part of the profile. When substituting `[PROJECT_PROFILE]`, append this line to the profile table: `| context7 available | [yes / no] |` so the research agent knows whether to use context7.
+Dispatch a single subagent using the Agent tool. Paste the full content of `PROJECT_CONTEXT.md` into `[PROJECT_CONTEXT]` before dispatching. Also append a line at the end: `context7 available: yes/no` so the research agent knows whether to use context7.
 
 ```
 Agent({
@@ -336,8 +371,8 @@ INSTRUCTIONS:
 - Prefer TypeScript-first tools for TypeScript projects.
 - Match complexity to stated scale: lightest tools for prototypes, standard for MVPs, full-featured for production.
 
-PROJECT PROFILE:
-[PROJECT_PROFILE — paste the full confirmed profile table here]
+PROJECT CONTEXT:
+[PROJECT_CONTEXT — paste the full content of PROJECT_CONTEXT.md here]
 
 TASK:
 For each applicable category below, find the best current tool. Return a JSON array.
@@ -399,7 +434,7 @@ If the agent returns an error, empty output, or non-parseable content: tell the 
 
 1. Parse the JSON array.
 2. For any category in the confirmed profile that has no matching result, note the gap.
-   For any category where the Phase 1 answer was "Not sure" or "Not sure yet": research it anyway and include it in the results, but add `"conditional": true` to the JSON object so the validator knows to flag it as optional for the user to confirm.
+   For any category where the Detail Questions answer was "Not sure" or "Not sure yet": research it anyway and include it in the results, but add `"conditional": true` to the JSON object so the validator knows to flag it as optional for the user to confirm.
 3. Add always-on guardrails as mandatory entries if not already in the results.
 4. Assemble the full proposed stack as a flat list for the validator.
 
@@ -419,9 +454,7 @@ PROPOSED STACK:
 [STACK_JSON — paste the full JSON array returned by the research agent, including all fields: category, recommendation, reason, free_tier, ts_support, maintenance, alternatives, install_cmd, config_notes]
 
 PROJECT CONTEXT:
-- Scale: [prototype / MVP / production]
-- Deployment: [Vercel / Railway / Fly.io / AWS / self-hosted]
-- Language: [TypeScript / Python / Go]
+[PROJECT_CONTEXT — paste the full content of PROJECT_CONTEXT.md here]
 
 CHECKS TO PERFORM:
 
@@ -533,6 +566,7 @@ Always output items in this order:
 12. Auth
 13. API tooling (tRPC, GraphQL, etc.)
 14. Feature tools in this order: payments → email → file storage → real-time → webhooks → background jobs → cron
+    - If webhooks_inbound is true and payments is also in the stack (e.g. Stripe webhooks), merge webhook setup into the payments issue rather than creating a separate webhooks issue. Only create a standalone webhooks issue if inbound webhooks exist without a corresponding payments tool.
 15. Observability: error tracking → logging → analytics → monitoring
 16. Deployment tooling
 
@@ -564,11 +598,12 @@ gh issue create \
   --body "$(cat <<'BODY'
 Install and configure <Tool Name> as the <category> layer.
 
-**Stack context:** <2–3 relevant stack facts, e.g. "PostgreSQL, TypeScript strict, Node 20, Vercel deployment">
 **Free tier:** <yes / no — note if paid-only>
 **Validator note:** <warning text, or "none">
 
-> When picking this up, run a fresh doc search before installing.
+See `PROJECT_CONTEXT.md` for full stack reasoning, deployment constraints, and feature context.
+
+> When picking this up, read PROJECT_CONTEXT.md first, then run a fresh doc search before installing.
 > Use context7 if available.
 BODY
 )"
@@ -585,11 +620,12 @@ gh issue create \
   --body "$(cat <<'BODY'
 Initialize the repository with git, add a .gitignore appropriate for this stack, and create the first commit.
 
-**Stack context:** [one-line stack summary]
 **Free tier:** yes
 **Validator note:** none
 
-> When picking this up, use context7 or web search to find the correct .gitignore template for this stack.
+See `PROJECT_CONTEXT.md` for the full stack (use it to select the correct .gitignore template).
+
+> Use context7 or web search to find the correct .gitignore for this stack.
 BODY
 )"
 ```
@@ -602,7 +638,7 @@ If output format is SETUP.md, write this file to the project root:
 # Project Setup
 
 > Generated by the project-setup skill. Work through items in order.
-> For each item: run a fresh doc search before installing. Use context7 if available.
+> For each item: read PROJECT_CONTEXT.md first, then run a fresh doc search before installing. Use context7 if available.
 
 ## Guardrails (always required)
 
