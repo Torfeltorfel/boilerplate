@@ -44,7 +44,7 @@ If not found:
 > Then run: `gh auth login`
 > Let me know when you're done."
 
-Wait for user confirmation before continuing.
+Wait for user confirmation before continuing, then re-run `which gh` to verify installation succeeded before proceeding.
 
 ```bash
 gh auth status
@@ -75,3 +75,5 @@ If yes:
 - Run: `gh repo create <name> --<public|private> --clone`
 - If the command fails, show the full error output and ask the user to resolve it before continuing.
 - If skipped: set output format to SETUP.md only (no GitHub Issues option later).
+
+Store the result as `repo_created` (true if repo was created, false if skipped). Later phases use this to determine whether GitHub Issues are available as an output format.
