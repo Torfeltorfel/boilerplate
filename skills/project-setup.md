@@ -13,6 +13,20 @@ Do NOT use when adding a single library to an existing project or when you alrea
 
 ---
 
+## Core Principle
+
+The stack is already complex. Every new tool adds learning curve, ops burden, and context noise. The bar for adding something new is high. **Exhaust the existing stack first.**
+
+**The 3 Questions — ask in order, stop when you can answer yes:**
+
+1. **Can something in the committed stack handle this?** → Use it. Done.
+2. **Do I have a paying customer asking for this?** → No customer = no infra for it.
+3. **Is the simplest possible solution good enough for now?** → Yes → ship it, revisit later.
+
+These questions apply to every tool recommendation in this skill. When in doubt, leave it out.
+
+---
+
 **Announce:** "I'm using the project-setup skill to bootstrap your project. Let me run a few quick checks first."
 
 ---
@@ -125,21 +139,12 @@ Options:
 
 Store as: **language**
 
-**A4 — Scale and team**
-Question: "What's the expected scale and team size at launch?"
-Options:
-- Prototype / side project (solo, no real users yet)
-- MVP for real users (small team, 1–5 people)
-- Production from day one (larger team, real traffic expected immediately)
-
-Store as: **scale**
-
-**A5 — One-liner**
+**A4 — One-liner**
 Ask as open text: "Describe what your app does in one sentence."
 
 Store as: **one_liner**
 
-This is passed verbatim to the research agent and used by the inference engine to resolve ambiguities not covered by A1–A4.
+This is passed verbatim to the research agent and used by the inference engine to resolve ambiguities not covered by A1–A3.
 
 ---
 
@@ -193,14 +198,6 @@ After the Discovery Questions, build a draft project profile by applying these r
 | TypeScript, API only | Vitest (unit + integration) |
 | Python | pytest |
 | Go | testing package (stdlib) |
-
-### Complexity tier
-
-| A4 | Apply everywhere |
-|---|---|
-| Prototype / side project | Lightest tools; skip observability unless user asks |
-| MVP for real users | Standard tools; flag observability as recommended |
-| Production from day one | Full stack; treat error tracking + logging as required |
 
 ### What is NEVER inferred (always ask in Detail Questions)
 
@@ -264,8 +261,8 @@ Description shown to user:
 Options: Scheduled / recurring only / Heavy processing only / Both / No
 
 **Observability**:
-- If scale = prototype: Ask as one multi-select: "Any observability tools? (skip is fine for a prototype)" Options: Error tracking / Structured logging / Analytics / Monitoring+APM / None for now
-- If scale = MVP or production: Ask each separately with a note that error tracking + logging are recommended for production.
+Ask as one multi-select: "Which observability tools do you want from the start? (you can always add more later)"
+Options: Error tracking (e.g. Sentry) / Structured logging / Analytics / Monitoring + APM / None for now
 
 **Framework disambiguation** (only if the inference engine flagged an ambiguity, e.g. "Next.js or Astro"):
 Ask the specific choice flagged. Example: "For a content site on Vercel — Next.js (more dynamic, API routes) or Astro (faster static output, less JS)?"
@@ -275,7 +272,7 @@ Question: "How should I deliver the setup checklist?"
 Options: GitHub Issues (one per tool, in order) / SETUP.md file
 (If repo_created = false, output format is automatically SETUP.md — do not ask.)
 
-Store answers as: **auth_needed**, **database_type**, **orm_needed**, **payments_needed**, **notifications**, **file_storage**, **realtime**, **external_services**, **background_work**, **observability**, **output_format**.
+Store answers as: **auth_needed**, **database_type**, **orm_needed**, **payments_needed**, **notifications**, **file_storage**, **realtime**, **external_services**, **background_work**, **observability**, **output_format**. Also store **webhooks_inbound** = true if external_services includes "Receive events" or "Both".
 
 ---
 
@@ -296,11 +293,6 @@ Write the file using the template below. Fill every section from the collected v
 - Self-hosted → "Full control. Responsible for uptime, SSL, and scaling."
 - Not decided → "No deployment constraints applied. Tool choices remain platform-agnostic."
 
-**Scale implications to derive (fill the Scale section):**
-- Prototype → "Prefer lightest tools. Skip observability unless explicitly requested. No enterprise tooling."
-- MVP for real users → "Standard tooling appropriate. Flag observability as strongly recommended."
-- Production from day one → "Full stack expected. Error tracking and structured logging are required, not optional."
-
 **Template:**
 
 ```markdown
@@ -313,8 +305,11 @@ Write the file using the template below. Fill every section from the collected v
 Target: [deploy_target].
 [Write the implication sentence derived from the table above. If there are feature-specific constraints (e.g. background jobs + Vercel Hobby), call them out explicitly here.]
 
-## Scale
-[scale]. [Write the implication sentence derived from the table above.]
+## Core principle
+Start lean. Every tool in this stack must justify its presence against the 3 questions:
+1. Can something already committed handle this? → Use it.
+2. Is there a paying customer asking for this? → No customer = no infra.
+3. Is the simplest solution good enough for now? → Yes → ship it, revisit later.
 
 ## Feature context
 [Write one bullet per feature that is needed. Skip features that are "not needed" or "no". For each, explain WHY it is needed (from the context of what the app does) and any constraint that affects tool choice.]
@@ -333,8 +328,7 @@ Target: [deploy_target].
 [language], [runtime], [framework]. [Any notable constraint, e.g. "TypeScript strict mode throughout."]
 
 ## Free tier requirement
-[If free tier was a stated preference:] Every tool must have a usable free tier. Flag anything paid-only.
-[If not stated:] No explicit free tier constraint. Prefer value-for-money over cheapest option.
+Every tool must have a usable free tier or be free. Flag anything paid-only.
 
 ## Guardrails (always on)
 TypeScript strict, ESLint (current config for this framework), Prettier, Husky + lint-staged. These are non-negotiable and appear in every project regardless of other choices.
@@ -367,9 +361,14 @@ INSTRUCTIONS:
 - Use web search to verify current versions, free tier status, and maintenance activity.
 - If context7 is available (noted in profile), use it to fetch official docs for each library.
 - Do NOT rely solely on training data — web-search each recommendation.
-- Prefer free or generous free-tier tools. Mark paid-only tools with "free_tier": false.
+- Every tool must have a usable free tier. Mark paid-only tools with "free_tier": false.
 - Prefer TypeScript-first tools for TypeScript projects.
-- Match complexity to stated scale: lightest tools for prototypes, standard for MVPs, full-featured for production.
+
+LEAN PRINCIPLE — apply to every recommendation:
+The bar for adding a new tool is high. For each category, run through these questions before recommending anything:
+1. Can something already in the committed stack handle this? → Recommend that instead.
+2. Is the simplest possible solution good enough? → Recommend the simplest. Do not recommend a tool that is more powerful than the project currently needs.
+3. Does this justify its ops burden? → If not, leave it out and say so.
 
 PROJECT CONTEXT:
 [PROJECT_CONTEXT — paste the full content of PROJECT_CONTEXT.md here]
@@ -476,11 +475,15 @@ CHECKS TO PERFORM:
    - Any category with an implicit dependency that has no tool? (e.g. tRPC selected but no HTTP client layer mentioned; Stripe webhooks but no webhook verification middleware)
    - Missing testing for a stack that clearly needs it?
 
-5. COMPLEXITY AUDIT
-   - Any tool that is significantly over-engineered for the stated scale? (e.g. Apache Kafka chosen for a solo prototype with background jobs)
+5. LEAN AUDIT
+   Apply the 3 questions to every tool in the stack:
+   1. Can something already committed handle this? → If yes, flag the redundant tool as "fail".
+   2. Is this tool more powerful than the project currently needs? → If yes, flag as "warn" with a simpler alternative.
+   3. Does this tool justify its ops burden for what it does? → If not, flag as "warn".
+   Examples: Apache Kafka for a simple job queue → "fail" (use BullMQ or a cron service); Elasticsearch for basic search → "warn" (use Postgres full-text search first).
 
 6. OBSERVABILITY GAPS
-   - Scale = production + no error tracking tool in stack → emit: {"tool": "error_tracking (missing)", "category": "observability", "verdict": "warn", "note": "Production app with no error tracking — consider Sentry (free tier available)."}
+   - No error tracking tool in stack → emit: {"tool": "error_tracking (missing)", "category": "observability", "verdict": "warn", "note": "No error tracking — consider Sentry (free tier available). Silent failures are dangerous in unattended processes."}
    - Backend present + no structured logging → emit: {"tool": "logging (missing)", "category": "observability", "verdict": "warn", "note": "Backend with no structured logging — consider Pino (Node) or structlog (Python)."}
 
 OUTPUT — return ONLY a valid JSON array, no prose:
