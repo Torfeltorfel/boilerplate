@@ -153,12 +153,16 @@ After Phase 0, build a draft project profile by applying these rules before aski
 |---|---|---|---|
 | SaaS / Marketplace / Internal tool | TypeScript | Vercel | Next.js (App Router), React, Turbopack |
 | SaaS / Marketplace / Internal tool | TypeScript | Railway / Fly.io | Next.js — note as assumption, confirm in summary |
+| SaaS / Marketplace / Internal tool | TypeScript | AWS / GCP / Azure / Self-hosted | Next.js or Express — note as assumption, confirm in summary |
+| SaaS / Marketplace / Internal tool | Python | any | FastAPI + Jinja2 (server-rendered) or FastAPI (API only — ask in Phase 1) |
+| SaaS / Marketplace / Internal tool | Go | any | net/http (stdlib) + templ or htmx — note as assumption, confirm in summary |
 | Content site | TypeScript | Vercel | Next.js or Astro — note ambiguity, ask in Phase 1 |
 | API service | TypeScript | any | Node + Hono (lightweight) |
 | API service | Python | any | FastAPI |
 | API service | Go | any | net/http (stdlib) |
 | Mobile app | TypeScript | — | Expo (React Native) |
 | Mobile app | other/unsure | — | Flutter |
+| (no match) | any | any | Cannot infer — ask user in Phase 1 which framework they prefer |
 
 ### Bundler / build tool
 
@@ -169,11 +173,14 @@ After Phase 0, build a draft project profile by applying these rules before aski
 | Hono / Express / FastAPI / Go | No bundler |
 | Expo | Metro bundler (built-in) |
 
+*If no bundler row matches, note it as unknown and leave bundler choice to the confirmation summary.*
+
 ### CSS (web only)
 
 | A1 | Infer |
 |---|---|
-| SaaS / Marketplace / Content site | Tailwind CSS |
+| SaaS / Marketplace | Tailwind CSS |
+| Content site | Tailwind CSS (static-friendly; consider Astro + Tailwind for purely static output) |
 | Internal tool | Tailwind CSS (note shadcn/ui as likely addition) |
 | API service / Mobile | N/A |
 
@@ -198,5 +205,9 @@ After Phase 0, build a draft project profile by applying these rules before aski
 
 - Auth (product decision — can't derive from app type alone)
 - Database (might use external APIs instead)
-- Payments, real-time, file storage, notifications, background jobs
+- Payments
+- Real-time features
+- File / image storage
+- Notifications (email, push, SMS)
+- Background jobs and cron tasks
 - Observability preferences
