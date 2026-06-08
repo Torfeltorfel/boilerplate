@@ -253,6 +253,8 @@ Options: Yes / No / Not sure
 Question: "Will the app connect to external services?"
 Options: Receive events from them (webhooks in) / Send data to them (API calls out) / Both / Neither
 
+Store as: **external_services**. Also derive: **webhooks_inbound** = true if answer includes "Receive events" or "Both".
+
 **Background work**:
 Question: "Does your app need to run work outside of a user's request?"
 Description shown to user:
@@ -318,7 +320,7 @@ Only after the user says "looks good", "yes", "proceed", or equivalent — conti
 
 ## Phase 2: Research Agent
 
-Dispatch a single subagent using the Agent tool. Substitute the confirmed project profile into `[PROJECT_PROFILE]` before dispatching. Pass `context7_available` as part of the profile.
+Dispatch a single subagent using the Agent tool. Substitute the confirmed project profile into `[PROJECT_PROFILE]` before dispatching. Pass `context7_available` as part of the profile. When substituting `[PROJECT_PROFILE]`, append this line to the profile table: `| context7 available | [yes / no] |` so the research agent knows whether to use context7.
 
 ```
 Agent({
@@ -346,9 +348,9 @@ ALWAYS RESEARCH (never skip):
 - "prettier" — current version + relevant plugins, e.g. prettier-plugin-tailwind (or Black/ruff format for Python)
 - "precommit_hooks" — husky + lint-staged current setup, or lefthook, or pre-commit (Python)
 - "testing_unit" — unit test framework for this stack + runtime
-- "testing_e2e" — e2e test framework (omit if API-only or mobile)
 
 RESEARCH IF APPLICABLE (skip if not in profile):
+- "testing_e2e" — e2e test framework; skip this category if the project is API-only (no frontend) or mobile-only
 - "frontend_framework" (if not already confirmed)
 - "ui_component_library" (if requested)
 - "css_tooling" (if Tailwind — research current version and relevant plugins)
@@ -392,8 +394,12 @@ OUTPUT — return ONLY a valid JSON array, no prose:
 ```
 
 After the agent returns:
+
+If the agent returns an error, empty output, or non-parseable content: tell the user "The research step encountered an error: [error]. Would you like me to retry?" Wait for confirmation before retrying.
+
 1. Parse the JSON array.
 2. For any category in the confirmed profile that has no matching result, note the gap.
+   For any category where the Phase 1 answer was "Not sure" or "Not sure yet": research it anyway and include it in the results, but add `"conditional": true` to the JSON object so the validator knows to flag it as optional for the user to confirm.
 3. Add always-on guardrails as mandatory entries if not already in the results.
 4. Assemble the full proposed stack as a flat list for the validator.
 
@@ -410,7 +416,7 @@ Agent({
 You are reviewing a proposed tech stack. Use your training knowledge to reason about compatibility, maintenance, and gaps. Do NOT perform web searches.
 
 PROPOSED STACK:
-[STACK_JSON — flat JSON array of {category, recommendation, free_tier, alternatives}]
+[STACK_JSON — paste the full JSON array returned by the research agent, including all fields: category, recommendation, reason, free_tier, ts_support, maintenance, alternatives, install_cmd, config_notes]
 
 PROJECT CONTEXT:
 - Scale: [prototype / MVP / production]
@@ -441,8 +447,8 @@ CHECKS TO PERFORM:
    - Any tool that is significantly over-engineered for the stated scale? (e.g. Apache Kafka chosen for a solo prototype with background jobs)
 
 6. OBSERVABILITY GAPS
-   - Scale = production + no error tracking tool in stack → emit a "warn"
-   - Backend present + no structured logging → emit a "warn"
+   - Scale = production + no error tracking tool in stack → emit: {"tool": "error_tracking (missing)", "category": "observability", "verdict": "warn", "note": "Production app with no error tracking — consider Sentry (free tier available)."}
+   - Backend present + no structured logging → emit: {"tool": "logging (missing)", "category": "observability", "verdict": "warn", "note": "Backend with no structured logging — consider Pino (Node) or structlog (Python)."}
 
 OUTPUT — return ONLY a valid JSON array, no prose:
 [
@@ -456,11 +462,15 @@ verdict values: "ok" | "warn" | "fail"
 })
 ```
 
+Before dispatching, transform the research agent's array: rename each object's `"recommendation"` field to `"tool"` so it matches the validator's output schema (which uses `"tool"` as the key).
+
 ---
 
 ## Conflict Resolution
 
 Apply fixes in this exact order after the validator returns. Do not skip steps.
+
+If the validator returns an error or non-parseable content: treat all tools as "ok" and note "Validator unavailable — proceeding without validation." in the summary line.
 
 ```
 FOR EACH tool with verdict "fail":
@@ -475,9 +485,13 @@ FOR EACH tool with verdict "fail":
     → Log internally: "[category]: swapped [old tool] → [new tool]"
 
   CASE B — alternative has a concern ("warn"):
-    → Present to user:
-      "I'd swap [old tool] for [alternative] but it has a concern: [validator note].
-       Other options: [next alternative], [next alternative]. Which do you prefer?"
+    → Before presenting to user, check the next alternative(s) in the list the same way.
+    → If a later alternative is clean ("ok"), use that one via Case A (silent swap).
+    → Only present to user if ALL alternatives have concerns:
+      "I'd swap [old tool] but all alternatives have concerns:
+       [option A]: [concern]
+       [option B]: [concern]
+       Which do you prefer?"
     → Wait for user choice. Update the stack with chosen tool.
 
   CASE C — no clean alternative found (all alternatives also fail or warn):
@@ -521,6 +535,23 @@ Always output items in this order:
 14. Feature tools in this order: payments → email → file storage → real-time → webhooks → background jobs → cron
 15. Observability: error tracking → logging → analytics → monitoring
 16. Deployment tooling
+
+### Create GitHub Labels
+
+Before creating any issues, ensure the required labels exist. Run these commands:
+
+```bash
+gh label create "setup" --color "0075ca" --description "Project setup task" 2>/dev/null || true
+gh label create "guardrail" --color "e4e669" --description "Always-on quality guardrail" 2>/dev/null || true
+gh label create "database" --color "d93f0b" --description "" 2>/dev/null || true
+gh label create "auth" --color "0e8a16" --description "" 2>/dev/null || true
+gh label create "testing" --color "bfd4f2" --description "" 2>/dev/null || true
+gh label create "payments" --color "5319e7" --description "" 2>/dev/null || true
+gh label create "observability" --color "f9d0c4" --description "" 2>/dev/null || true
+gh label create "deployment" --color "c2e0c6" --description "" 2>/dev/null || true
+```
+
+Create a label for each tool category present in the final stack. The `|| true` ensures the command doesn't fail if the label already exists.
 
 ### GitHub Issues
 
