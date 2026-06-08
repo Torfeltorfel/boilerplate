@@ -313,3 +313,86 @@ Here's what I'm working with before I start researching. Correct anything that l
 If the user corrects a row: update the profile for that row and acknowledge the change in one line. Do NOT re-show the full summary unless they ask. Do NOT re-run inference.
 
 Only after the user says "looks good", "yes", "proceed", or equivalent — continue to Phase 2.
+
+---
+
+## Phase 2: Research Agent
+
+Dispatch a single subagent using the Agent tool. Substitute the confirmed project profile into `[PROJECT_PROFILE]` before dispatching. Pass `context7_available` as part of the profile.
+
+```
+Agent({
+  description: "Research current best tools for project stack",
+  prompt: `
+You are researching the best current tools for a new project.
+
+INSTRUCTIONS:
+- Use web search to verify current versions, free tier status, and maintenance activity.
+- If context7 is available (noted in profile), use it to fetch official docs for each library.
+- Do NOT rely solely on training data — web-search each recommendation.
+- Prefer free or generous free-tier tools. Mark paid-only tools with "free_tier": false.
+- Prefer TypeScript-first tools for TypeScript projects.
+- Match complexity to stated scale: lightest tools for prototypes, standard for MVPs, full-featured for production.
+
+PROJECT PROFILE:
+[PROJECT_PROFILE — paste the full confirmed profile table here]
+
+TASK:
+For each applicable category below, find the best current tool. Return a JSON array.
+
+ALWAYS RESEARCH (never skip):
+- "typescript_config" — best tsconfig.json for this stack + runtime (or mypy config for Python, go vet for Go)
+- "eslint" — flat config vs legacy, plugins for this specific framework (or Ruff for Python)
+- "prettier" — current version + relevant plugins, e.g. prettier-plugin-tailwind (or Black/ruff format for Python)
+- "precommit_hooks" — husky + lint-staged current setup, or lefthook, or pre-commit (Python)
+- "testing_unit" — unit test framework for this stack + runtime
+- "testing_e2e" — e2e test framework (omit if API-only or mobile)
+
+RESEARCH IF APPLICABLE (skip if not in profile):
+- "frontend_framework" (if not already confirmed)
+- "ui_component_library" (if requested)
+- "css_tooling" (if Tailwind — research current version and relevant plugins)
+- "auth" (if auth = needed)
+- "state_management" (if client state complexity warrants it)
+- "database" (if database = needed)
+- "orm" (if orm = needed)
+- "api_tooling" (e.g. tRPC, GraphQL codegen — if applicable)
+- "object_storage" (if file storage = needed)
+- "realtime" (if real-time = needed)
+- "webhook_handling" (if webhooks inbound = needed)
+- "background_jobs" (if heavy processing = needed)
+- "cron_scheduler" (if scheduled jobs = needed)
+- "payments" (if payments = needed)
+- "email_transactional" (if email notifications = needed)
+- "push_notifications" (if push = needed)
+- "sms" (if SMS = needed)
+- "error_tracking" (if selected in observability)
+- "logging" (if structured logging = needed)
+- "analytics" (if analytics = needed)
+- "monitoring_apm" (if monitoring = needed)
+- "deployment_tooling" (if deployment target needs specific setup, e.g. Vercel CLI, Fly CLI)
+- "mobile_framework" (if mobile)
+
+OUTPUT — return ONLY a valid JSON array, no prose:
+[
+  {
+    "category": "orm",
+    "recommendation": "Drizzle ORM",
+    "reason": "Lightweight, TypeScript-first, SQL-like syntax, active maintenance",
+    "free_tier": true,
+    "ts_support": "first-class",
+    "maintenance": "active",
+    "alternatives": ["Prisma", "Kysely"],
+    "install_cmd": "npm install drizzle-orm drizzle-kit",
+    "config_notes": "Needs drizzle.config.ts and a schema file under src/db/schema.ts"
+  }
+]
+`
+})
+```
+
+After the agent returns:
+1. Parse the JSON array.
+2. For any category in the confirmed profile that has no matching result, note the gap.
+3. Add always-on guardrails as mandatory entries if not already in the results.
+4. Assemble the full proposed stack as a flat list for the validator.
