@@ -327,8 +327,8 @@ Start lean. Every tool in this stack must justify its presence against the 3 que
 ## Language & runtime
 [language], [runtime], [framework]. [Any notable constraint, e.g. "TypeScript strict mode throughout."]
 
-## Free tier requirement
-Every tool must have a usable free tier or be free. Flag anything paid-only.
+## Cost requirement
+Prefer free or cheap tools. A generous free tier is ideal; low-cost paid tiers are acceptable. Flag anything expensive or enterprise-priced.
 
 ## Guardrails (always on)
 TypeScript strict, ESLint (current config for this framework), Prettier, Husky + lint-staged. These are non-negotiable and appear in every project regardless of other choices.
@@ -361,7 +361,7 @@ INSTRUCTIONS:
 - Use web search to verify current versions, free tier status, and maintenance activity.
 - If context7 is available (noted in profile), use it to fetch official docs for each library.
 - Do NOT rely solely on training data — web-search each recommendation.
-- Every tool must have a usable free tier. Mark paid-only tools with "free_tier": false.
+- Prefer free or cheap tools. Mark expensive/enterprise-priced tools with "free_tier": false. A low-cost paid tier is acceptable; note the price.
 - Prefer TypeScript-first tools for TypeScript projects.
 
 LEAN PRINCIPLE — apply to every recommendation:
@@ -468,8 +468,8 @@ CHECKS TO PERFORM:
    - Flag tools with no visible activity in the past 6 months IF a better-maintained alternative exists in the alternatives list
 
 3. FREE TIER INTEGRITY
-   - Does the full stack hold together under free tier constraints?
-   - Flag tools where free tier was removed or severely restricted recently (e.g. PlanetScale removed free tier in 2024)
+   - Does the full stack hold together at low cost? Flag anything expensive or enterprise-priced.
+   - Flag tools where free or cheap tiers were removed or restricted recently (e.g. PlanetScale removed free tier in 2024)
 
 4. GAPS
    - Any category with an implicit dependency that has no tool? (e.g. tRPC selected but no HTTP client layer mentioned; Stripe webhooks but no webhook verification middleware)
@@ -483,13 +483,13 @@ CHECKS TO PERFORM:
    Examples: Apache Kafka for a simple job queue → "fail" (use BullMQ or a cron service); Elasticsearch for basic search → "warn" (use Postgres full-text search first).
 
 6. OBSERVABILITY GAPS
-   - No error tracking tool in stack → emit: {"tool": "error_tracking (missing)", "category": "observability", "verdict": "warn", "note": "No error tracking — consider Sentry (free tier available). Silent failures are dangerous in unattended processes."}
+   - No error tracking tool in stack → emit: {"tool": "error_tracking (missing)", "category": "observability", "verdict": "warn", "note": "No error tracking — consider Sentry (free or cheap). Silent failures are dangerous in unattended processes."}
    - Backend present + no structured logging → emit: {"tool": "logging (missing)", "category": "observability", "verdict": "warn", "note": "Backend with no structured logging — consider Pino (Node) or structlog (Python)."}
 
 OUTPUT — return ONLY a valid JSON array, no prose:
 [
   {"tool": "Drizzle ORM", "category": "orm", "verdict": "ok", "note": ""},
-  {"tool": "PlanetScale", "category": "database", "verdict": "fail", "note": "Free tier removed March 2024. Recommend Neon (PostgreSQL, generous free tier) or Turso (SQLite, edge-friendly)."},
+  {"tool": "PlanetScale", "category": "database", "verdict": "fail", "note": "Free tier removed March 2024, paid plans are expensive. Recommend Neon (PostgreSQL, free + cheap tiers) or Turso (SQLite, edge-friendly, cheap)."},
   {"tool": "ESLint 9", "category": "eslint", "verdict": "warn", "note": "prettier-eslint is not yet compatible with ESLint 9 flat config. Use eslint-config-prettier instead."}
 ]
 
@@ -601,7 +601,7 @@ gh issue create \
   --body "$(cat <<'BODY'
 Install and configure <Tool Name> as the <category> layer.
 
-**Free tier:** <yes / no — note if paid-only>
+**Cost:** <free / cheap (note price) / expensive — flag if enterprise-priced>
 **Validator note:** <warning text, or "none">
 
 See `PROJECT_CONTEXT.md` for full stack reasoning, deployment constraints, and feature context.
@@ -623,7 +623,7 @@ gh issue create \
   --body "$(cat <<'BODY'
 Initialize the repository with git, add a .gitignore appropriate for this stack, and create the first commit.
 
-**Free tier:** yes
+**Cost:** free
 **Validator note:** none
 
 See `PROJECT_CONTEXT.md` for the full stack (use it to select the correct .gitignore template).
