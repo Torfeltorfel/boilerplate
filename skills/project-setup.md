@@ -140,3 +140,63 @@ Ask as open text: "Describe what your app does in one sentence."
 Store as: **one_liner**
 
 This is passed verbatim to the research agent and used by the inference engine to resolve ambiguities not covered by A1–A4.
+
+---
+
+## Inference Engine
+
+After Phase 0, build a draft project profile by applying these rules before asking any more questions. Inferences are probabilistic — they go into the confirmation summary where the user can correct them. Do NOT ask about inferred items in Phase 1.
+
+### Runtime + framework
+
+| A1 (app type) | Language | A2 (deploy) | Infer |
+|---|---|---|---|
+| SaaS / Marketplace / Internal tool | TypeScript | Vercel | Next.js (App Router), React, Turbopack |
+| SaaS / Marketplace / Internal tool | TypeScript | Railway / Fly.io | Next.js — note as assumption, confirm in summary |
+| Content site | TypeScript | Vercel | Next.js or Astro — note ambiguity, ask in Phase 1 |
+| API service | TypeScript | any | Node + Hono (lightweight) |
+| API service | Python | any | FastAPI |
+| API service | Go | any | net/http (stdlib) |
+| Mobile app | TypeScript | — | Expo (React Native) |
+| Mobile app | other/unsure | — | Flutter |
+
+### Bundler / build tool
+
+| Framework | Infer |
+|---|---|
+| Next.js | Turbopack (dev), Next.js build (prod) — no separate bundler config needed |
+| Astro / SvelteKit / Remix | Vite |
+| Hono / Express / FastAPI / Go | No bundler |
+| Expo | Metro bundler (built-in) |
+
+### CSS (web only)
+
+| A1 | Infer |
+|---|---|
+| SaaS / Marketplace / Content site | Tailwind CSS |
+| Internal tool | Tailwind CSS (note shadcn/ui as likely addition) |
+| API service / Mobile | N/A |
+
+### Testing
+
+| Language + type | Infer |
+|---|---|
+| TypeScript, web or full-stack | Vitest (unit + integration), Playwright (e2e) |
+| TypeScript, API only | Vitest (unit + integration) |
+| Python | pytest |
+| Go | testing package (stdlib) |
+
+### Complexity tier
+
+| A4 | Apply everywhere |
+|---|---|
+| Prototype / side project | Lightest tools; skip observability unless user asks |
+| MVP for real users | Standard tools; flag observability as recommended |
+| Production from day one | Full stack; treat error tracking + logging as required |
+
+### What is NEVER inferred (always ask in Phase 1)
+
+- Auth (product decision — can't derive from app type alone)
+- Database (might use external APIs instead)
+- Payments, real-time, file storage, notifications, background jobs
+- Observability preferences
