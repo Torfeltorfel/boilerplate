@@ -396,3 +396,103 @@ After the agent returns:
 2. For any category in the confirmed profile that has no matching result, note the gap.
 3. Add always-on guardrails as mandatory entries if not already in the results.
 4. Assemble the full proposed stack as a flat list for the validator.
+
+---
+
+## Phase 3: Validator Agent
+
+Dispatch a second subagent. No web search — reasoning only. Substitute the assembled stack into `[STACK_JSON]`.
+
+```
+Agent({
+  description: "Validate proposed stack for compatibility, gaps, and free-tier integrity",
+  prompt: `
+You are reviewing a proposed tech stack. Use your training knowledge to reason about compatibility, maintenance, and gaps. Do NOT perform web searches.
+
+PROPOSED STACK:
+[STACK_JSON — flat JSON array of {category, recommendation, free_tier, alternatives}]
+
+PROJECT CONTEXT:
+- Scale: [prototype / MVP / production]
+- Deployment: [Vercel / Railway / Fly.io / AWS / self-hosted]
+- Language: [TypeScript / Python / Go]
+
+CHECKS TO PERFORM:
+
+1. COMPATIBILITY
+   - Known bad pairings (e.g. ESLint 9 flat config with plugins that only support legacy config format)
+   - Runtime conflicts (e.g. Bun runtime with tools that have Node.js-only native addons)
+   - Framework + library version misalignment (e.g. Next.js 14 requires React 18)
+   - Deployment constraint violations (e.g. a cron tool that needs a persistent worker process chosen with Vercel Hobby, which only has serverless functions)
+
+2. MAINTENANCE
+   - Flag any tool that appears unmaintained or deprecated
+   - Flag tools with no visible activity in the past 6 months IF a better-maintained alternative exists in the alternatives list
+
+3. FREE TIER INTEGRITY
+   - Does the full stack hold together under free tier constraints?
+   - Flag tools where free tier was removed or severely restricted recently (e.g. PlanetScale removed free tier in 2024)
+
+4. GAPS
+   - Any category with an implicit dependency that has no tool? (e.g. tRPC selected but no HTTP client layer mentioned; Stripe webhooks but no webhook verification middleware)
+   - Missing testing for a stack that clearly needs it?
+
+5. COMPLEXITY AUDIT
+   - Any tool that is significantly over-engineered for the stated scale? (e.g. Apache Kafka chosen for a solo prototype with background jobs)
+
+6. OBSERVABILITY GAPS
+   - Scale = production + no error tracking tool in stack → emit a "warn"
+   - Backend present + no structured logging → emit a "warn"
+
+OUTPUT — return ONLY a valid JSON array, no prose:
+[
+  {"tool": "Drizzle ORM", "category": "orm", "verdict": "ok", "note": ""},
+  {"tool": "PlanetScale", "category": "database", "verdict": "fail", "note": "Free tier removed March 2024. Recommend Neon (PostgreSQL, generous free tier) or Turso (SQLite, edge-friendly)."},
+  {"tool": "ESLint 9", "category": "eslint", "verdict": "warn", "note": "prettier-eslint is not yet compatible with ESLint 9 flat config. Use eslint-config-prettier instead."}
+]
+
+verdict values: "ok" | "warn" | "fail"
+`
+})
+```
+
+---
+
+## Conflict Resolution
+
+Apply fixes in this exact order after the validator returns. Do not skip steps.
+
+```
+FOR EACH tool with verdict "fail":
+
+  1. Look up the research agent's `alternatives` list for that category.
+  2. Select the first alternative.
+  3. Reason inline (no new subagent) about whether that alternative is clean:
+     - Apply the same validator checks mentally for the alternative.
+
+  CASE A — alternative is clean ("ok"):
+    → Swap silently. Do NOT ask the user.
+    → Log internally: "[category]: swapped [old tool] → [new tool]"
+
+  CASE B — alternative has a concern ("warn"):
+    → Present to user:
+      "I'd swap [old tool] for [alternative] but it has a concern: [validator note].
+       Other options: [next alternative], [next alternative]. Which do you prefer?"
+    → Wait for user choice. Update the stack with chosen tool.
+
+  CASE C — no clean alternative found (all alternatives also fail or warn):
+    → Always ask the user:
+      "No clean option found for [category]. Here are the trade-offs:
+       [option A]: [issue]
+       [option B]: [issue]
+       Which do you want to use?"
+    → Wait for user choice.
+
+FOR EACH tool with verdict "warn" NOT already resolved above:
+  → Keep the tool as-is.
+  → Attach the warning note to its issue body / SETUP.md entry.
+  → Do NOT silently swap a warned tool without asking.
+```
+
+After all conflicts are resolved, print a one-line summary before output:
+> "Stack validated: [N] tools confirmed ✓, [N] warnings attached to issues, [N] swapped ([list of swaps])."
