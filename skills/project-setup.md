@@ -273,3 +273,43 @@ Options: GitHub Issues (one per tool, in order) / SETUP.md file
 (If repo_created = false, output format is automatically SETUP.md — do not ask.)
 
 Store answers as: **auth_needed**, **database_type**, **orm_needed**, **payments_needed**, **notifications**, **file_storage**, **realtime**, **external_services**, **background_work**, **observability**, **output_format**.
+
+---
+
+## Confirmation Summary
+
+Before dispatching any subagent, present the complete inferred + answered profile in one message. Wait for explicit approval before continuing. The user can correct any row.
+
+Present the summary in this exact format (omit rows that don't apply to this project):
+
+---
+
+Here's what I'm working with before I start researching. Correct anything that looks wrong — or say "looks good" to proceed.
+
+| Category | Value |
+|---|---|
+| Runtime | [e.g. Node 20 / Python 3.12 / Go 1.22] |
+| Framework | [e.g. Next.js 14 App Router / FastAPI / Expo] |
+| Language | TypeScript (strict) / Python (typed) / Go |
+| Bundler | [e.g. Turbopack / Vite / none] |
+| CSS | [e.g. Tailwind v4 / none] |
+| Testing | [e.g. Vitest + Playwright / pytest / stdlib] |
+| Auth | ✓ needed / ✗ not needed |
+| Database | [e.g. PostgreSQL (SQL) / MongoDB / none] |
+| ORM | ✓ needed / ✗ not needed |
+| Payments | ✓ needed / ✗ not needed |
+| Notifications | [e.g. email / push / none] |
+| File storage | ✓ needed / ✗ not needed |
+| Real-time | ✓ needed / ✗ not needed |
+| Webhooks | [e.g. inbound (Stripe events) / outbound / none] |
+| Background jobs | [e.g. scheduled + heavy processing / none] |
+| Observability | [e.g. error tracking + logging / none] |
+| Deployment | [e.g. Vercel / Railway / Fly.io] |
+| Output format | GitHub Issues / SETUP.md |
+| Guardrails (always on) | TypeScript strict, ESLint, Prettier, Husky + lint-staged |
+
+---
+
+If the user corrects a row: update the profile for that row and acknowledge the change in one line. Do NOT re-show the full summary unless they ask. Do NOT re-run inference.
+
+Only after the user says "looks good", "yes", "proceed", or equivalent — continue to Phase 2.
