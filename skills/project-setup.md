@@ -95,6 +95,10 @@ Options:
 - Mobile app (iOS and/or Android)
 - Not sure yet
 
+If "Not sure yet": proceed anyway — rely on A5 and later questions to establish the app type. Mark app_type as "unknown" and let the inference engine default to standard web app assumptions.
+
+Store as: **app_type**
+
 **A2 — Deployment target**
 Question: "Where will this be deployed?"
 Options:
@@ -105,6 +109,10 @@ Options:
 - Self-hosted (VPS or bare metal)
 - Not decided yet
 
+*(For mobile apps: deployment target refers to the backend/API, if any. App Store / Play Store distribution is handled by the mobile framework — leave this as "Not decided yet" if building mobile-only.)*
+
+Store as: **deploy_target**
+
 **A3 — Primary language**
 Question: "What's your primary language?"
 Options:
@@ -113,7 +121,9 @@ Options:
 - Go
 - Other
 
-*Skip A3 entirely if A1 + A5 already makes the language unambiguous (e.g. "Next.js SaaS" implies TypeScript). Note the inferred language in the confirmation summary instead.*
+*Skip A3 if A1 already makes the language unambiguous (e.g. if the user typed "Next.js" or "React" when answering A1, TypeScript/JS is implied). When in doubt, ask. Note the inferred language in the confirmation summary instead.*
+
+Store as: **language**
 
 **A4 — Scale and team**
 Question: "What's the expected scale and team size at launch?"
@@ -122,7 +132,11 @@ Options:
 - MVP for real users (small team, 1–5 people)
 - Production from day one (larger team, real traffic expected immediately)
 
+Store as: **scale**
+
 **A5 — One-liner**
 Ask as open text: "Describe what your app does in one sentence."
+
+Store as: **one_liner**
 
 This is passed verbatim to the research agent and used by the inference engine to resolve ambiguities not covered by A1–A4.
