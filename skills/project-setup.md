@@ -211,3 +211,65 @@ After Phase 0, build a draft project profile by applying these rules before aski
 - Notifications (email, push, SMS)
 - Background jobs and cron tasks
 - Observability preferences
+
+---
+
+## Phase 1: Targeted Clarifiers
+
+Ask ONLY questions the inference engine could not resolve. Skip any question whose answer is already known from Phase 0 or inference. A typical run is 5–8 questions. Never exceed 10.
+
+Use AskUserQuestion for each. Ask one at a time.
+
+**Auth** (skip if app type clearly implies no accounts, e.g. pure API service with no user concept):
+Question: "Will users have accounts / need to log in?"
+Options: Yes / No / Not sure yet
+
+**Database**:
+Question: "Does your app need to store data in a database?"
+Options: Yes, SQL (PostgreSQL / MySQL / SQLite) / Yes, NoSQL (MongoDB / Redis / etc.) / Both / No / Not sure
+
+**ORM / query layer** (only ask if database answer was yes):
+Question: "Do you want an ORM or query builder to talk to the database?"
+Options: Yes, suggest one / No, I'll write raw queries / Not sure
+
+**Payments** (ask for SaaS, Marketplace; skip for internal tools and content sites unless A5 implies it):
+Question: "Will the app accept payments?"
+Options: Yes / No / Not sure
+
+**Notifications**:
+Question: "Will the app send notifications to users?"
+Options: Email / Push notifications / SMS / None / Not sure
+(multiselect)
+
+**File storage**:
+Question: "Will the app store user-uploaded files or images?"
+Options: Yes / No / Not sure
+
+**Real-time features**:
+Question: "Will the app have real-time features? (live updates, chat, collaborative editing)"
+Options: Yes / No / Not sure
+
+**External services**:
+Question: "Will the app connect to external services?"
+Options: Receive events from them (webhooks in) / Send data to them (API calls out) / Both / Neither
+
+**Background work**:
+Question: "Does your app need to run work outside of a user's request?"
+Description shown to user:
+- Scheduled / recurring tasks that run even when no user is active (e.g. nightly reports, cleanup jobs, digest emails)
+- Heavy processing too slow to block a user (e.g. image resizing, PDF generation, video encoding)
+Options: Scheduled / recurring only / Heavy processing only / Both / No
+
+**Observability**:
+- If scale = prototype: Ask as one multi-select: "Any observability tools? (skip is fine for a prototype)" Options: Error tracking / Structured logging / Analytics / Monitoring+APM / None for now
+- If scale = MVP or production: Ask each separately with a note that error tracking + logging are recommended for production.
+
+**Framework disambiguation** (only if the inference engine flagged an ambiguity, e.g. "Next.js or Astro"):
+Ask the specific choice flagged. Example: "For a content site on Vercel — Next.js (more dynamic, API routes) or Astro (faster static output, less JS)?"
+
+**Output format** (ask last, only if repo_created = true):
+Question: "How should I deliver the setup checklist?"
+Options: GitHub Issues (one per tool, in order) / SETUP.md file
+(If repo_created = false, output format is automatically SETUP.md — do not ask.)
+
+Store answers as: **auth_needed**, **database_type**, **orm_needed**, **payments_needed**, **notifications**, **file_storage**, **realtime**, **external_services**, **background_work**, **observability**, **output_format**.
