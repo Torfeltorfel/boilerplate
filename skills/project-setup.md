@@ -1,582 +1,324 @@
 ---
 name: project-setup
-description: Interactive project bootstrapper. Asks high-signal questions, infers stack, researches current tools via a subagent, validates compatibility, then outputs GitHub issues or a SETUP.md checklist.
+description: TypeScript project bootstrapper. Asks a handful of questions, writes a project context doc for your review, then researches and validates a full tool stack via subagents. Outputs GitHub issues or a SETUP.md to work through.
 ---
 
-## When to use this skill
+## What this skill does
 
-Use when starting a brand new project from scratch and you want a researched, compatible tool list with GitHub issues to work through.
+Asks 4–5 questions about what you're building. Writes a context doc for you to review and correct. Then dispatches a research subagent to find the best current tools for your specific project, validates the stack, and creates GitHub issues (or a SETUP.md checklist) to work through.
 
-Do NOT use when adding a single library to an existing project or when you already have your full stack decided.
+**This skill is opinionated.** It makes choices — framework, runtime, tools. You review before research runs and can push back on anything. TypeScript strict is non-negotiable.
 
-**What you'll need:** `git` installed, `gh` CLI installed and authenticated, a GitHub account. context7 MCP is optional but improves doc quality during installation steps.
+**You'll need:** `git`, `gh` CLI (authenticated), a GitHub account. context7 MCP is optional but improves install steps.
 
 ---
 
 ## Core Principle
 
-The stack is already complex. Every new tool adds learning curve, ops burden, and context noise. The bar for adding something new is high. **Exhaust the existing stack first.**
+Every tool adds learning curve, ops burden, and context noise. Before recommending anything, ask:
 
-**The 3 Questions — ask in order, stop when you can answer yes:**
-
-1. **Can something in the committed stack handle this?** → Use it. Done.
-2. **Do I have a paying customer asking for this?** → No customer = no infra for it.
-3. **Is the simplest possible solution good enough for now?** → Yes → ship it, revisit later.
-
-These questions apply to every tool recommendation in this skill. When in doubt, leave it out.
+1. Can something already in the stack handle this? → Use it.
+2. Is the simplest solution good enough for now? → Ship it, revisit later.
+3. Does this justify its ops burden at this project's current scale? → If not, leave it out.
 
 ---
 
-**Announce:** "I'm using the project-setup skill to bootstrap your project. Let me run a few quick checks first."
+**Announce:** "I'm using the project-setup skill. Let me run a few quick checks first."
 
 ---
 
-## Pre-flight Checks
+## Pre-flight
 
-Run ALL of these before asking any questions.
+Run before asking any questions.
 
-### 1. git
-
+**git**
 ```bash
 git --version
 ```
+If missing: "Please install git (https://git-scm.com) then re-run." Stop.
 
-If the command fails:
-> "git is not installed. Please install it first (https://git-scm.com), then re-run this skill."
-
-Stop. Do not continue until git is available.
-
-### 2. gh CLI
-
+**gh CLI**
 ```bash
 which gh
 ```
+If missing: "Install the GitHub CLI: `brew install gh` then `gh auth login`. Let me know when done."
+Wait for confirmation, then verify with `gh auth status`. If not authenticated, wait again.
 
-If not found:
-> "The GitHub CLI (`gh`) is not installed. You'll need it to create the repo and issues.
-> Install: `brew install gh` (macOS) or visit https://cli.github.com
-> Then run: `gh auth login`
-> Let me know when you're done."
+**context7**
+Ask (AskUserQuestion): "Is context7 MCP installed in your Claude Code setup?"
+Options: Yes / No / Not sure — store as `context7_available` (treat "not sure" as no).
 
-Wait for user confirmation before continuing, then re-run `which gh` to verify installation succeeded before proceeding.
-
-```bash
-gh auth status
-```
-
-If not authenticated:
-> "`gh` is installed but not authenticated. Run `gh auth login` then let me know."
-
-Wait for confirmation before continuing.
-
-### 3. context7
-
-Ask the user (AskUserQuestion):
-- Question: "Is the context7 MCP server installed in your Claude Code setup? It gives me access to live library docs during installation steps."
-- Options: Yes / No / Not sure
-
-Store the answer as `context7_available`. Treat "not sure" as no.
-
-### 4. GitHub repo
-
-Ask using AskUserQuestion:
-- Question: "Would you like me to create a GitHub repository for this project now?"
-- Options: Yes, create it now / Skip for now (output will be SETUP.md only)
-
-If yes:
-- Ask repo name (open text)
-- Ask visibility: Public / Private
-- Run: `gh repo create <name> --<public|private> --clone`
-- If the command fails, show the full error output and ask the user to resolve it before continuing.
-- If skipped: set output format to SETUP.md only (no GitHub Issues option later).
-
-Store the result as `repo_created` (true if repo was created, false if skipped). Later phases use this to determine whether GitHub Issues are available as an output format.
+**GitHub repo**
+Ask (AskUserQuestion): "Create a GitHub repository for this project now?"
+Options: Yes / Skip (output will be SETUP.md only)
+If yes: ask repo name + Public / Private, run `gh repo create <name> --<public|private> --clone`.
+Store as `repo_created`.
 
 ---
 
-## Discovery Questions
+## Questions
 
-Ask these questions using AskUserQuestion, one at a time. They are the highest-signal inputs — most of the stack is inferred from them.
+Use AskUserQuestion. Ask one at a time. Five questions maximum.
 
-**A1 — App type**
-Question: "What kind of app is this?"
-Options:
-- SaaS (subscription product, multiple users with accounts)
-- Marketplace (buyers + sellers, transactions between users)
-- Internal tool (used only by your own team)
-- Content site (blog, docs, marketing, mostly read-only)
-- API / backend service (no frontend — consumed by other apps)
-- Mobile app (iOS and/or Android)
-- Not sure yet
+**Q1 — App type**
+"What kind of app is this?"
+- SaaS (subscription product, user accounts)
+- Marketplace (buyers + sellers)
+- Internal tool (your team only)
+- Content site (blog, docs, marketing)
+- API / backend service (no frontend)
+- Mobile app
 
-If "Not sure yet": proceed anyway — rely on A5 and later questions to establish the app type. Mark app_type as "unknown" and let the inference engine default to standard web app assumptions.
+Store as `app_type`.
 
-Store as: **app_type**
+**Q2 — Deployment**
+"Where will this be deployed?"
+- Vercel
+- Railway
+- Fly.io
+- AWS / GCP / Azure
+- Self-hosted
+- Not decided
 
-**A2 — Deployment target**
-Question: "Where will this be deployed?"
-Options:
-- Vercel (great for Next.js; Hobby plan has no real persistent cron)
-- Railway (containers + real cron; no edge functions)
-- Fly.io (containers, global regions, flexible)
-- AWS / GCP / Azure (full control, more setup required)
-- Self-hosted (VPS or bare metal)
-- Not decided yet
+Store as `deploy_target`.
 
-*(For mobile apps: deployment target refers to the backend/API, if any. App Store / Play Store distribution is handled by the mobile framework — leave this as "Not decided yet" if building mobile-only.)*
+**Q3 — One-liner**
+"Describe what your app does in one sentence." (open text)
+Store as `one_liner`.
 
-Store as: **deploy_target**
-
-**A3 — Primary language**
-Question: "What's your primary language?"
-Options:
-- TypeScript / JavaScript
-- Python
-- Go
-- Other
-
-*Skip A3 if the language is already unambiguous from context — e.g. the user mentioned a JS/TS framework in A1 free-text, or A5 contains terms like "Next.js", "React", "Vue", "Svelte", or similar TS/JS framework names. When in doubt, ask. Note the inferred language in the confirmation summary instead.*
-
-Store as: **language**
-
-**A4 — One-liner**
-Ask as open text: "Describe what your app does in one sentence."
-
-Store as: **one_liner**
-
-This is passed verbatim to the research agent and used by the inference engine to resolve ambiguities not covered by A1–A3.
-
----
-
-## Inference Engine
-
-After the Discovery Questions, build a draft project profile by applying these rules before asking any more questions. Inferences are probabilistic — they go into the project context document where the user can correct them. Do NOT ask about inferred items in the Detail Questions.
-
-### Runtime + framework
-
-| A1 (app type) | Language | A2 (deploy) | Infer |
-|---|---|---|---|
-| SaaS / Marketplace / Internal tool | TypeScript | Vercel | Next.js (App Router), React, Turbopack |
-| SaaS / Marketplace / Internal tool | TypeScript | Railway / Fly.io | Next.js — note as assumption, confirm in summary |
-| SaaS / Marketplace / Internal tool | TypeScript | AWS / GCP / Azure / Self-hosted | Next.js or Express — note as assumption, confirm in summary |
-| SaaS / Marketplace / Internal tool | Python | any | FastAPI + Jinja2 (server-rendered) or FastAPI (API only — ask in Detail Questions) |
-| SaaS / Marketplace / Internal tool | Go | any | net/http (stdlib) + templ or htmx — note as assumption, confirm in summary |
-| Content site | TypeScript | Vercel | Next.js or Astro — note ambiguity, ask in Detail Questions |
-| Content site | TypeScript | any other | Astro (static-friendly) or Next.js — note ambiguity, ask in Detail Questions |
-| API service | TypeScript | any | Node + Hono (lightweight) |
-| API service | Python | any | FastAPI |
-| API service | Go | any | net/http (stdlib) |
-| Mobile app | TypeScript | — | Expo (React Native) |
-| Mobile app | other/unsure | — | Flutter |
-| (no match) | any | any | Cannot infer — ask user in Detail Questions which framework they prefer |
-
-### Bundler / build tool
-
-| Framework | Infer |
-|---|---|
-| Next.js | Turbopack (dev), Next.js build (prod) — no separate bundler config needed |
-| Astro / SvelteKit / Remix | Vite |
-| Hono / Express / FastAPI / Go | No bundler |
-| Expo | Metro bundler (built-in) |
-
-*If no bundler row matches, note it as unknown and leave bundler choice to the confirmation summary.*
-
-### CSS (web only)
-
-| A1 | Infer |
-|---|---|
-| SaaS / Marketplace | Tailwind CSS |
-| Content site | Tailwind CSS (static-friendly; consider Astro + Tailwind for purely static output) |
-| Internal tool | Tailwind CSS (note shadcn/ui as likely addition) |
-| API service / Mobile | N/A |
-
-### Testing
-
-| Language + type | Infer |
-|---|---|
-| TypeScript, web or full-stack | Vitest (unit + integration), Playwright (e2e) |
-| TypeScript, API only | Vitest (unit + integration) |
-| Python | pytest |
-| Go | testing package (stdlib) |
-
-### What is NEVER inferred (always ask in Detail Questions)
-
-- Auth (product decision — can't derive from app type alone)
-- Database (might use external APIs instead)
+**Q4 — Features needed** (multi-select)
+"Which of these does your app need?"
+- User accounts / auth
+- Database
 - Payments
-- Real-time features
-- File / image storage
-- Notifications (email, push, SMS)
-- Background jobs and cron tasks
-- Observability preferences
+- File uploads or image storage
+- Real-time (live updates, chat, collaborative editing)
+- Email notifications
+- Push or SMS notifications
+- Background jobs or scheduled tasks
+- Error tracking / observability
 
----
+Store as feature flags: `needs_auth`, `needs_database`, `needs_payments`, `needs_file_storage`, `needs_realtime`, `needs_email`, `needs_push_sms`, `needs_background`, `needs_observability`.
 
-## Detail Questions
+**Q5 — Clarifiers** (only if Q4 left something ambiguous)
+- If `needs_background`: "Scheduled/recurring tasks, heavy processing (image resize, PDF gen), or both?"
+- If `needs_push_sms`: "Push, SMS, or both?"
+- If `needs_database`: "SQL or NoSQL?"
+- If `app_type` is "Content site": "Mostly static, or does it need server-side features like a CMS or user comments?"
 
-Ask ONLY questions the inference engine could not resolve. Skip any question whose answer is already known from the discovery questions or inference. A typical run is 5–8 questions. Never exceed 10.
-
-Use AskUserQuestion for each. Ask one at a time.
-
-**Auth** (skip if app type clearly implies no accounts, e.g. pure API service with no user concept):
-Question: "Will users have accounts / need to log in?"
-Options: Yes / No / Not sure yet
-
-**Database**:
-Question: "Does your app need to store data in a database?"
-Options: Yes, SQL (PostgreSQL / MySQL / SQLite) / Yes, NoSQL (MongoDB / Redis / etc.) / Both / No / Not sure
-
-**ORM / query layer** (only ask if database answer was yes):
-Question: "Do you want an ORM or query builder to talk to the database?"
-Options: Yes, suggest one / No, I'll write raw queries / Not sure
-
-**Payments** (ask for SaaS, Marketplace; skip for internal tools and content sites unless A5 implies it):
-Question: "Will the app accept payments?"
-Options: Yes / No / Not sure
-
-**Notifications**:
-Question: "Will the app send notifications to users?"
-Options: Email / Push notifications / SMS / None / Not sure
-(multiselect)
-
-**File storage**:
-Question: "Will the app store user-uploaded files or images?"
-Options: Yes / No / Not sure
-
-**Real-time features**:
-Question: "Will the app have real-time features? (live updates, chat, collaborative editing)"
-Options: Yes / No / Not sure
-
-**External services** (skip if app type is "Content site" and A5 shows no API/integration intent):
-Question: "Will the app connect to external services?"
-Options: Receive events from them (webhooks in) / Send data to them (API calls out) / Both / Neither
-
-Store as: **external_services**. Also derive: **webhooks_inbound** = true if answer includes "Receive events" or "Both".
-
-**Background work** (skip if app type is "Content site" and A5 shows no background-processing intent):
-Question: "Does your app need to run work outside of a user's request?"
-Description shown to user:
-- Scheduled / recurring tasks that run even when no user is active (e.g. nightly reports, cleanup jobs, digest emails)
-- Heavy processing too slow to block a user (e.g. image resizing, PDF generation, video encoding)
-Options: Scheduled / recurring only / Heavy processing only / Both / No
-
-**Observability**:
-Ask as one multi-select: "Which observability tools do you want from the start? (you can always add more later)"
-Options: Error tracking (e.g. Sentry) / Structured logging / Analytics / Monitoring + APM / None for now
-
-**Framework disambiguation** (only if the inference engine flagged an ambiguity, e.g. "Next.js or Astro"):
-Ask the specific choice flagged. Example: "For a content site on Vercel — Next.js (more dynamic, API routes) or Astro (faster static output, less JS)?"
-
-**Output format** (ask last, only if repo_created = true):
-Question: "How should I deliver the setup checklist?"
-Options: GitHub Issues (one per tool, in order) / SETUP.md file
-(If repo_created = false, output format is automatically SETUP.md — do not ask.)
-
-Store answers as: **auth_needed**, **database_type**, **orm_needed**, **payments_needed**, **notifications**, **file_storage**, **realtime**, **external_services**, **background_work**, **observability**, **output_format**. Also store **webhooks_inbound** = true if external_services includes "Receive events" or "Both".
+Skip any clarifier already obvious from Q1–Q3.
 
 ---
 
 ## Project Context Document
 
-Before dispatching any subagent, write a `PROJECT_CONTEXT.md` file to the project root. This file is passed verbatim to the research agent, validator agent, and every per-issue agent — it is their only source of truth about the project.
-
-### Generate PROJECT_CONTEXT.md
-
-Write the file using the template below. Fill every section from the collected variables. Do not leave placeholder text — derive real implications from the answers.
-
-**Deployment constraint implications to derive (fill the Deployment section):**
-- Vercel Hobby → "Cron is limited to once per day. Any scheduled job needs an external service (e.g. QStash) or an upgrade to Pro."
-- Vercel Pro → "Edge functions, cron, and persistent workers available."
-- Railway → "Container-based. Persistent workers and real cron supported. No edge functions."
-- Fly.io → "Container-based, global regions. Persistent processes supported."
-- AWS / GCP / Azure → "Full infrastructure control. Set up CI/CD separately."
-- Self-hosted → "Full control. Responsible for uptime, SSL, and scaling."
-- Not decided → "No deployment constraints applied. Tool choices remain platform-agnostic."
-
-**Template:**
+Write `PROJECT_CONTEXT.md` to the project root. This file is passed verbatim to all subagents — it is their only source of truth. Write in plain English.
 
 ```markdown
 # Project Context
 
 ## What we're building
-[one_liner]. [1–2 sentences elaborating the core user flow derived from app_type + one_liner — write in plain English, not tech jargon.]
+[one_liner]. [1–2 sentences on the core user flow, derived from app_type + one_liner.]
 
 ## Deployment & constraints
 Target: [deploy_target].
-[Write the implication sentence derived from the table above. If there are feature-specific constraints (e.g. background jobs + Vercel Hobby), call them out explicitly here.]
+[Write the concrete implication for tool choices:]
+- Vercel Hobby: cron limited to once/day, no persistent workers — need an external scheduler for real jobs.
+- Vercel Pro: edge functions, cron, and persistent workers available.
+- Railway / Fly.io: container-based, real cron, persistent processes.
+- AWS / GCP / Azure: full control, CI/CD setup needed separately.
+- Self-hosted: responsible for uptime, SSL, and scaling.
+- Not decided: no deployment constraints — keep tool choices platform-agnostic.
 
-## Core principle
-Start lean. Every tool in this stack must justify its presence against the 3 questions:
-1. Can something already committed handle this? → Use it.
-2. Is there a paying customer asking for this? → No customer = no infra.
-3. Is the simplest solution good enough for now? → Yes → ship it, revisit later.
+## Features needed
+[One bullet per selected feature. For each, write one sentence on WHY it's needed based on what the app does. Skip features not selected.]
 
-## Feature context
-[Write one bullet per feature that is needed. Skip features that are "not needed" or "no". For each, explain WHY it is needed (from the context of what the app does) and any constraint that affects tool choice.]
+## Cost
+Prefer free or cheap. Generous free tiers ideal; low-cost paid tiers acceptable. Flag anything enterprise-priced.
 
-- **Auth:** [yes/no] — [e.g. "Store owners need accounts to connect their Shopify shop. Social login (Google/GitHub) worth considering to reduce signup friction."]
-- **Database:** [type] — [e.g. "Stores audit results per shop and user account data. PostgreSQL chosen for relational structure."]
-- **Background jobs:** [type] — [e.g. "Weekly report emails + nightly audit scans. Given Vercel Hobby cron limit, QStash is the better fit over native Vercel Cron."]
-- **Email:** [yes/no and type] — [e.g. "Weekly reports are a core feature, not just transactional auth emails. Needs HTML templating support."]
-- **Payments:** [yes/no] — [e.g. "Not needed now but stub the integration — plan is to charge later. Choose a library that is easy to activate."]
-- **Webhooks:** [inbound/outbound/both/none] — [e.g. "Inbound from Stripe for payment events."]
-- **Real-time:** [yes/no] — [explain if yes]
-- **File storage:** [yes/no] — [explain if yes]
-- **Observability:** [what was selected] — [e.g. "Error tracking required — app runs unattended scans where silent failures are dangerous."]
+## Guardrails (always on, non-negotiable)
+TypeScript strict. Linting. Formatting. Pre-commit hooks. Testing. These are required on every project regardless of other choices.
 
-## Language & runtime
-[language], [runtime], [framework]. [Any notable constraint, e.g. "TypeScript strict mode throughout."]
-
-## Cost requirement
-Prefer free or cheap tools. A generous free tier is ideal; low-cost paid tiers are acceptable. Flag anything expensive or enterprise-priced.
-
-## Guardrails (always on)
-TypeScript strict, ESLint (current config for this framework), Prettier, Husky + lint-staged. These are non-negotiable and appear in every project regardless of other choices.
+## Research notes
+context7 available: [yes/no]
 ```
 
-### Review gate
-
 After writing the file, tell the user:
+> "I've written `PROJECT_CONTEXT.md`. Review it — edit anything wrong or add context I missed — then say 'looks good' to start researching."
 
-> "I've written `PROJECT_CONTEXT.md`. Please review it — edit anything that looks wrong or add context I missed — then say 'looks good' to start researching."
-
-If the user edits the file directly: re-read it before dispatching the research agent.
-If the user corrects something verbally: update the relevant section in the file, acknowledge the change in one line, do NOT rewrite the whole file.
-
-Only after explicit approval ("looks good", "yes", "proceed", or equivalent) — continue to the Research Agent.
+Re-read the file if the user edits it directly. Only proceed on explicit approval.
 
 ---
 
-## Phase 2: Research Agent
+## Research Agent
 
-Dispatch a single subagent using the Agent tool. Paste the full content of `PROJECT_CONTEXT.md` into `[PROJECT_CONTEXT]` before dispatching. Also append a line at the end: `context7 available: yes/no` so the research agent knows whether to use context7.
+Dispatch a subagent. The agent determines the full stack — framework, runtime, and every feature tool. Paste the full PROJECT_CONTEXT.md content where indicated.
 
 ```
 Agent({
   description: "Research current best tools for project stack",
   prompt: `
-You are researching the best current tools for a new project.
+You are researching the complete tool stack for a new TypeScript project from scratch.
 
-INSTRUCTIONS:
-- Use web search to verify current versions, free tier status, and maintenance activity.
-- If context7 is available (noted in profile), use it to fetch official docs for each library.
-- Do NOT rely solely on training data — web-search each recommendation.
-- Prefer free or cheap tools. Mark expensive/enterprise-priced tools with "free_tier": false. A low-cost paid tier is acceptable; note the price.
-- Prefer TypeScript-first tools for TypeScript projects.
+Your job is to find what the community is actually using RIGHT NOW — not what was popular when you were trained. The TypeScript ecosystem moves fast. Treat your training data as a starting hypothesis, not an answer. Web-search every category.
 
-LEAN PRINCIPLE — apply to every recommendation:
-The bar for adding a new tool is high. For each category, run through these questions before recommending anything:
-1. Can something already in the committed stack handle this? → Recommend that instead.
-2. Is the simplest possible solution good enough? → Recommend the simplest. Do not recommend a tool that is more powerful than the project currently needs.
-3. Does this justify its ops burden? → If not, leave it out and say so.
+RULES:
+- Web-search each category. Verify current version, community adoption, maintenance activity, and free tier status.
+- Use context7 if available (noted in project context) to fetch official docs after you've chosen a tool.
+- Prefer free or cheap tools. Flag anything expensive or enterprise-priced with free_tier: false.
+- Lean principle: recommend the simplest tool that genuinely solves the problem. If something already in the stack covers it, use that. Do not add tools for problems the project doesn't have yet.
 
 PROJECT CONTEXT:
-[PROJECT_CONTEXT — paste the full content of PROJECT_CONTEXT.md here]
+[paste full PROJECT_CONTEXT.md here]
 
-TASK:
-For each applicable category below, find the best current tool. Return a JSON array.
+RESEARCH THESE FOR EVERY PROJECT:
 
-ALWAYS RESEARCH (never skip):
-- "typescript_config" — best tsconfig.json for this stack + runtime (or mypy config for Python, go vet for Go)
-- "eslint" — flat config vs legacy, plugins for this specific framework (or Ruff for Python)
-- "prettier" — current version + relevant plugins, e.g. prettier-plugin-tailwind (or Black/ruff format for Python)
-- "precommit_hooks" — husky + lint-staged current setup, or lefthook, or pre-commit (Python)
-- "testing_unit" — unit test framework for this stack + runtime
+"runtime" — What is the current best JavaScript runtime for this framework and deployment target? Consider the deployment constraints in the project context.
 
-RESEARCH IF APPLICABLE (skip if not in profile):
-- "testing_e2e" — e2e test framework; skip this category if the project is API-only (no frontend) or mobile-only
-- "frontend_framework" (if not already confirmed)
-- "ui_component_library" (if requested)
-- "css_tooling" (if Tailwind — research current version and relevant plugins)
-- "auth" (if auth = needed)
-- "state_management" (if client state complexity warrants it)
-- "database" (if database = needed)
-- "orm" (if orm = needed)
-- "api_tooling" (e.g. tRPC, GraphQL codegen — if applicable)
-- "object_storage" (if file storage = needed)
-- "realtime" (if real-time = needed)
-- "webhook_handling" (if webhooks inbound = needed)
-- "background_jobs" (if heavy processing = needed)
-- "cron_scheduler" (if scheduled jobs = needed)
-- "payments" (if payments = needed)
-- "email_transactional" (if email notifications = needed)
-- "push_notifications" (if push = needed)
-- "sms" (if SMS = needed)
-- "error_tracking" (if selected in observability)
-- "logging" (if structured logging = needed)
-- "analytics" (if analytics = needed)
-- "monitoring_apm" (if monitoring = needed)
-- "deployment_tooling" (if deployment target needs specific setup, e.g. Vercel CLI, Fly CLI)
-- "mobile_framework" (if mobile)
+"framework" — What is the current best framework for this app type and deployment target? Consider what the community is actively choosing for new projects today.
+
+"typescript_config" — What is the current recommended TypeScript compiler setup for this framework and runtime? How strict should it be? Is there a maintained base config package for this stack? config_snippet required: a working tsconfig.json.
+
+"linting" — What is the current community standard for TypeScript code linting on this stack? Has the tooling changed recently (e.g. config format changes, new tools)? Does the recommended setup also handle code formatting, or is that separate? Record in config_notes: handles_formatting: true/false. config_snippet required: a working lint config file.
+
+"formatting" — Based on the linting recommendation: if linting already handles formatting (handles_formatting: true), what is needed here to prevent conflicts? If linting does not handle formatting, what is the current standard formatting tool and config for this stack? config_snippet required only if a standalone formatter is recommended.
+
+"pre_commit" — What is the current recommended approach for running linting and formatting checks automatically before a commit in TypeScript projects? config_snippet required: a working hook config.
+
+"testing" — What is the current recommended unit/integration test setup for TypeScript + this framework? If the project has a frontend, what is the current recommended end-to-end testing tool? config_snippet required: a working test config file.
+
+RESEARCH THESE IF THE FEATURE IS IN THE PROJECT CONTEXT:
+
+"css" — if frontend: what is the current standard CSS approach for this framework?
+"auth" — if auth needed: what is the current best auth solution for this stack?
+"database" — if database needed: what is the current best database for these requirements?
+"orm" — if database needed: what is the current best query layer for this database + TypeScript?
+"payments" — if payments needed: what is the current standard payments integration for this stack?
+"file_storage" — if file uploads needed: what is the current best object storage for this deployment?
+"realtime" — if real-time needed: what is the current best real-time solution for this framework?
+"email" — if email notifications needed: what is the current best transactional email service?
+"push_sms" — if push or SMS needed: what is the current best provider?
+"background_jobs" — if heavy processing needed: what is the current best job queue for this runtime?
+"cron" — if scheduled tasks needed: what is the current best scheduler given the deployment constraints?
+"webhooks" — if receiving external events: what is the current best approach for webhook handling and verification?
+"error_tracking" — if observability selected: what is the current best error tracking option?
+"logging" — if observability selected: what is the current best structured logging library for this runtime?
+"analytics" — if observability selected: what is the current best analytics option?
+"deployment_tooling" — if the deployment target needs a specific CLI or config: what is the current setup?
 
 OUTPUT — return ONLY a valid JSON array, no prose:
 [
   {
     "category": "orm",
     "recommendation": "Drizzle ORM",
-    "reason": "Lightweight, TypeScript-first, SQL-like syntax, active maintenance",
+    "reason": "Lightweight, TypeScript-first, SQL-like syntax, actively maintained",
     "free_tier": true,
-    "ts_support": "first-class",
     "maintenance": "active",
     "alternatives": ["Prisma", "Kysely"],
     "install_cmd": "npm install drizzle-orm drizzle-kit",
-    "config_notes": "Needs drizzle.config.ts and a schema file under src/db/schema.ts"
+    "config_notes": "Needs drizzle.config.ts and schema at src/db/schema.ts",
+    "config_snippet": ""
   }
 ]
+
+config_snippet REQUIRED for: typescript_config, linting, formatting, pre_commit, testing.
+config_snippet optional for all others — include only if there is a non-obvious config step.
 `
 })
 ```
 
-After the agent returns:
+If the agent returns an error or unparseable output: "Research failed: [error]. Retry?" Wait for confirmation.
 
-If the agent returns an error, empty output, or non-parseable content: tell the user "The research step encountered an error: [error]. Would you like me to retry?" Wait for confirmation before retrying.
-
-1. Parse the JSON array.
-2. For any category in the confirmed profile that has no matching result, note the gap.
-   For any category where the Detail Questions answer was "Not sure" or "Not sure yet": research it anyway and include it in the results, but add `"conditional": true` to the JSON object so the validator knows to flag it as optional for the user to confirm.
-3. Add always-on guardrails as mandatory entries if not already in the results.
-4. Assemble the full proposed stack as a flat list for the validator.
+Parse the JSON. Note any selected feature with no matching result as a gap. Ensure all always-on guardrails are present.
 
 ---
 
-## Phase 3: Validator Agent
+## Validator Agent
 
-Dispatch a second subagent. No web search — reasoning only. Substitute the assembled stack into `[STACK_JSON]`.
+Second subagent. Reasoning only — no web search.
 
 ```
 Agent({
-  description: "Validate proposed stack for compatibility, gaps, and free-tier integrity",
+  description: "Validate stack for compatibility, gaps, and cost",
   prompt: `
-You are reviewing a proposed tech stack. Use your training knowledge to reason about compatibility, maintenance, and gaps. Do NOT perform web searches.
+Review this proposed stack. Training knowledge only — no web search.
 
-PROPOSED STACK:
-[STACK_JSON — paste the full JSON array returned by the research agent, including all fields: category, recommendation, reason, free_tier, ts_support, maintenance, alternatives, install_cmd, config_notes]
+STACK:
+[paste full JSON array from research agent]
 
 PROJECT CONTEXT:
-[PROJECT_CONTEXT — paste the full content of PROJECT_CONTEXT.md here]
+[paste PROJECT_CONTEXT.md]
 
-CHECKS TO PERFORM:
+CHECK:
 
-1. COMPATIBILITY
-   - Known bad pairings (e.g. ESLint 9 flat config with plugins that only support legacy config format)
-   - Runtime conflicts (e.g. Bun runtime with tools that have Node.js-only native addons)
-   - Framework + library version misalignment (e.g. Next.js 14 requires React 18)
-   - Deployment constraint violations (e.g. a cron tool that needs a persistent worker process chosen with Vercel Hobby, which only has serverless functions)
+1. COMPATIBILITY — known bad pairings, runtime conflicts, framework/library version misalignment, deployment violations (e.g. persistent worker required but deploying to Vercel Hobby serverless)
 
-2. MAINTENANCE
-   - Flag any tool that appears unmaintained or deprecated
-   - Flag tools with no visible activity in the past 6 months IF a better-maintained alternative exists in the alternatives list
+2. MAINTENANCE — flag unmaintained or deprecated tools; flag tools with no activity in 6+ months if a better alternative is in the alternatives list
 
-3. FREE TIER INTEGRITY
-   - Does the full stack hold together at low cost? Flag anything expensive or enterprise-priced.
-   - Flag tools where free or cheap tiers were removed or restricted recently (e.g. PlanetScale removed free tier in 2024)
+3. COST — flag enterprise-priced tools; flag tools where free tier was removed recently (e.g. PlanetScale 2024)
 
-4. GAPS
-   - Any category with an implicit dependency that has no tool? (e.g. tRPC selected but no HTTP client layer mentioned; Stripe webhooks but no webhook verification middleware)
-   - Missing testing for a stack that clearly needs it?
+4. GAPS — missing implicit dependency (e.g. Stripe with no webhook middleware; tRPC with no HTTP client); missing testing for a project that clearly needs it
 
-5. LEAN AUDIT
-   Apply the 3 questions to every tool in the stack:
-   1. Can something already committed handle this? → If yes, flag the redundant tool as "fail".
-   2. Is this tool more powerful than the project currently needs? → If yes, flag as "warn" with a simpler alternative.
-   3. Does this tool justify its ops burden for what it does? → If not, flag as "warn".
-   Examples: Apache Kafka for a simple job queue → "fail" (use BullMQ or a cron service); Elasticsearch for basic search → "warn" (use Postgres full-text search first).
+5. LEAN — flag any tool more powerful than this project needs (e.g. Kafka for a simple queue → use BullMQ; Elasticsearch for basic search → use Postgres FTS first)
 
-6. OBSERVABILITY GAPS
-   - No error tracking tool in stack → emit: {"tool": "error_tracking (missing)", "category": "observability", "verdict": "warn", "note": "No error tracking — consider Sentry (free or cheap). Silent failures are dangerous in unattended processes."}
-   - Backend present + no structured logging → emit: {"tool": "logging (missing)", "category": "observability", "verdict": "warn", "note": "Backend with no structured logging — consider Pino (Node) or structlog (Python)."}
+6. OBSERVABILITY — if backend present with no logging: emit {"tool": "logging (missing)", "category": "logging", "verdict": "warn", "note": "No structured logging — consider Pino."}
+If no error tracking: emit {"tool": "error_tracking (missing)", "category": "error_tracking", "verdict": "warn", "note": "No error tracking — consider Sentry (free tier available)."}
 
-OUTPUT — return ONLY a valid JSON array, no prose:
+OUTPUT — return ONLY a valid JSON array:
 [
   {"tool": "Drizzle ORM", "category": "orm", "verdict": "ok", "note": ""},
-  {"tool": "PlanetScale", "category": "database", "verdict": "fail", "note": "Free tier removed March 2024, paid plans are expensive. Recommend Neon (PostgreSQL, free + cheap tiers) or Turso (SQLite, edge-friendly, cheap)."},
-  {"tool": "ESLint 9", "category": "eslint", "verdict": "warn", "note": "prettier-eslint is not yet compatible with ESLint 9 flat config. Use eslint-config-prettier instead."}
+  {"tool": "PlanetScale", "category": "database", "verdict": "fail", "note": "Free tier removed March 2024. Recommend Neon or Turso."},
+  {"tool": "ESLint 9", "category": "eslint", "verdict": "warn", "note": "Verify all plugins are flat-config compatible before installing."}
 ]
 
-verdict values: "ok" | "warn" | "fail"
+verdict: "ok" | "warn" | "fail"
 `
 })
 ```
-
-Before dispatching, transform the research agent's array: rename each object's `"recommendation"` field to `"tool"` so it matches the validator's output schema (which uses `"tool"` as the key).
 
 ---
 
 ## Conflict Resolution
 
-Apply fixes in this exact order after the validator returns. Do not skip steps.
-
-If the validator returns an error or non-parseable content: treat all tools as "ok" and note "Validator unavailable — proceeding without validation." in the summary line.
-
 ```
 FOR EACH tool with verdict "fail":
+  1. Auto-swap to the top alternative from research results.
+  2. Re-check the swap against validator logic inline (no new subagent).
+  3a. Swap is ok → proceed silently.
+  3b. Swap has warn → check remaining alternatives first. If still no clean option, ask:
+      "I'd use [X] but it has a warning: [note]. Other options: [A], [B]. Which do you prefer?"
+  3c. All alternatives also fail → always ask:
+      "No clean option for [category]. Trade-offs: [A] — [issue], [B] — [issue]. Which do you want?"
 
-  1. Look up the research agent's `alternatives` list for that category.
-  2. Select the first alternative.
-  3. Reason inline (no new subagent) about whether that alternative is clean:
-     - Apply the same validator checks mentally for the alternative.
+FOR EACH tool with verdict "warn" (not resolved above):
+  → Keep the tool. Attach the warning note to its issue or SETUP.md entry.
 
-  CASE A — alternative is clean ("ok"):
-    → Swap silently. Do NOT ask the user.
-    → Log internally: "[category]: swapped [old tool] → [new tool]"
-
-  CASE B — alternative has a concern ("warn"):
-    → Before presenting to user, check the next alternative(s) in the list the same way.
-    → If a later alternative is clean ("ok"), use that one via Case A (silent swap).
-    → Only present to user if ALL alternatives have concerns:
-      "I'd swap [old tool] but all alternatives have concerns:
-       [option A]: [concern]
-       [option B]: [concern]
-       Which do you prefer?"
-    → Wait for user choice. Update the stack with chosen tool.
-
-  CASE C — no clean alternative found (all alternatives also fail or warn):
-    → Always ask the user:
-      "No clean option found for [category]. Here are the trade-offs:
-       [option A]: [issue]
-       [option B]: [issue]
-       Which do you want to use?"
-    → Wait for user choice.
-
-FOR EACH tool with verdict "warn" NOT already resolved above:
-  → Keep the tool as-is.
-  → Attach the warning note to its issue body / SETUP.md entry.
-  → Do NOT silently swap a warned tool without asking.
+Silent swaps only when the replacement is a clean "ok".
 ```
 
-After all conflicts are resolved, print a one-line summary before output:
-> "Stack validated: [N] tools confirmed ✓, [N] warnings attached to issues, [N] swapped ([list of swaps])."
+Print before output: "Stack validated: [N] ok, [N] warnings attached, [N] swapped ([list])."
 
 ---
 
-## Phase 4: Output Generation
+## Output
 
 ### Dependency order
+1. git init (hardcoded, always first)
+2. typescript_config
+3. linting
+4. formatting
+5. pre_commit
+6. runtime (if any config needed)
+7. framework
+8. css
+9. testing
+10. database → orm → auth
+11. API tooling
+12. Feature tools: payments → email → file_storage → realtime → webhooks → background_jobs → cron
+13. Observability: error_tracking → logging → analytics
+14. deployment_tooling
 
-Always output items in this order:
-
-1. git init (hardcoded — always first)
-2. TypeScript config (guardrail)
-3. ESLint (guardrail)
-4. Prettier (guardrail)
-5. Husky + lint-staged (guardrail)
-6. Runtime / bundler (if any config needed)
-7. Frontend framework
-8. CSS tooling
-9. Testing framework
-10. Database
-11. ORM / query layer
-12. Auth
-13. API tooling (tRPC, GraphQL, etc.)
-14. Feature tools in this order: payments → email → file storage → real-time → webhooks → background jobs → cron
-    - If webhooks_inbound is true and payments is also in the stack (e.g. Stripe webhooks), merge webhook setup into the payments issue rather than creating a separate webhooks issue. Only create a standalone webhooks issue if inbound webhooks exist without a corresponding payments tool.
-15. Observability: error tracking → logging → analytics → monitoring
-16. Deployment tooling
-
-### Create GitHub Labels
-
-Before creating any issues, ensure the required labels exist. Run these commands:
-
+### Create labels (run before any issues)
 ```bash
 gh label create "setup" --color "0075ca" --description "Project setup task" 2>/dev/null || true
 gh label create "guardrail" --color "e4e669" --description "Always-on quality guardrail" 2>/dev/null || true
@@ -588,82 +330,69 @@ gh label create "observability" --color "f9d0c4" --description "" 2>/dev/null ||
 gh label create "deployment" --color "c2e0c6" --description "" 2>/dev/null || true
 ```
 
-Create a label for each tool category present in the final stack. The `|| true` ensures the command doesn't fail if the label already exists.
-
 ### GitHub Issues
 
-For each tool create one issue using the gh CLI. Use this template:
+One issue per tool, in dependency order. Use this template:
 
 ```bash
 gh issue create \
   --title "[Setup] <Tool Name>" \
   --label "setup,<category>[,guardrail]" \
   --body "$(cat <<'BODY'
-Install and configure <Tool Name> as the <category> layer.
+Install and configure <Tool Name>.
 
-**Cost:** <free / cheap (note price) / expensive — flag if enterprise-priced>
-**Validator note:** <warning text, or "none">
+**Cost:** <free / cheap: note price / expensive: flag it>
+**Validator note:** <note, or "none">
 
-See `PROJECT_CONTEXT.md` for full stack reasoning, deployment constraints, and feature context.
+[Only if config_snippet is non-empty:]
+<details>
+<summary>Suggested starting config (verify against latest docs before using)</summary>
 
-> When picking this up, read PROJECT_CONTEXT.md first, then run a fresh doc search before installing.
-> Use context7 if available.
+```
+[config_snippet]
+```
+</details>
+
+See PROJECT_CONTEXT.md for stack context and deployment constraints.
+
+> Read PROJECT_CONTEXT.md first. Run a fresh doc search before installing. Use context7 if available.
 BODY
 )"
 ```
 
-Add the `guardrail` label to the four always-on tools: TypeScript config, ESLint, Prettier, Husky + lint-staged.
+Add `guardrail` label to: typescript_config, linting, formatting, pre_commit, and testing — these are always present.
 
-**First issue is always git — hardcoded, never from research:**
-
+**First issue — hardcoded:**
 ```bash
 gh issue create \
   --title "[Setup] Initialize git repository" \
   --label "setup,guardrail" \
   --body "$(cat <<'BODY'
-Initialize the repository with git, add a .gitignore appropriate for this stack, and create the first commit.
+Initialize git, add a .gitignore for this stack, and create the first commit.
 
-**Cost:** free
-**Validator note:** none
-
-See `PROJECT_CONTEXT.md` for the full stack (use it to select the correct .gitignore template).
-
-> Use context7 or web search to find the correct .gitignore for this stack.
+See PROJECT_CONTEXT.md for the stack (use it to pick the right .gitignore template).
 BODY
 )"
 ```
 
-### SETUP.md
-
-If output format is SETUP.md, write this file to the project root:
+### SETUP.md (if repo_created = false)
 
 ```markdown
 # Project Setup
+> Work through in order. For each item: read PROJECT_CONTEXT.md first, then run a fresh doc search before installing. Use context7 if available.
 
-> Generated by the project-setup skill. Work through items in order.
-> For each item: read PROJECT_CONTEXT.md first, then run a fresh doc search before installing. Use context7 if available.
+## Guardrails
+- [ ] git — initialize, .gitignore, first commit
+- [ ] TypeScript config — [reason] | [validator note or "none"]
+- [ ] Linting — [recommendation + reason] | [validator note or "none"]
+- [ ] Formatting — [recommendation + reason] | [validator note or "none"]
+- [ ] Pre-commit hooks — [recommendation + reason] | [validator note or "none"]
+- [ ] Testing — [recommendation + reason] | [validator note or "none"]
 
-## Guardrails (always required)
-
-- [ ] **git** — initialize repository, add .gitignore, first commit
-- [ ] **TypeScript** — [reason from research agent] | Validator: [note or "none"]
-- [ ] **ESLint** — [reason] | Validator: [note or "none"]
-- [ ] **Prettier** — [reason] | Validator: [note or "none"]
-- [ ] **Husky + lint-staged** — [reason] | Validator: [note or "none"]
-
-## [Category name]
-
-- [ ] **[Tool]** — [reason from research agent] | Validator: [note or "none"]
-
-[Repeat for each category in dependency order]
+## [Category]
+- [ ] **[Tool]** — [reason] | [validator note or "none"]
 ```
 
-### Final prompt
-
-After all issues are created (or SETUP.md is written):
-
-> "Done! [N] issues created / SETUP.md written.
->
-> Want me to start working through them now? I'll tackle them in dependency order, running a fresh doc search for each one[, using context7 for live library docs]."
-
-Include the context7 note only if `context7_available` is true.
+### After output
+> "Done! [N] issues created. Want me to start working through them now?"
+> *(If context7_available: "I'll use context7 for live docs on each install.")*
