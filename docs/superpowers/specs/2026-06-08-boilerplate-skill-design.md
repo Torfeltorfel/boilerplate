@@ -1,15 +1,18 @@
 # Boilerplate Setup Skill — Design Spec
 
 **Date:** 2026-06-08  
-**Status:** Approved
+**Status:** Approved (rev 2)
 
 ---
 
 ## Overview
 
-A single Claude Code skill (`project-setup`) that guides any user through bootstrapping a new project. It asks high-level questions about what the app does, infers which tool categories are needed, researches current best tools via a subagent, validates the full stack for compatibility via a second subagent, and generates a GitHub issue list or SETUP.md as output.
+A single Claude Code skill (`project-setup`) that guides any user through bootstrapping a new project. It asks a small number of high-signal anchor questions, infers as much as possible, shows a confirmation summary, then researches current best tools via a subagent and validates the full stack for compatibility via a second subagent. Output is a GitHub issue list or SETUP.md.
 
 **Design principles:**
+- Ask as few questions as possible — infer aggressively from anchor answers, confirm at the end
+- Deployment target is asked early — it fundamentally constrains tool choices
+- Pre-flight checks happen before any questions — never waste 20 minutes then hit a blocker
 - Always-on guardrails (TypeScript, ESLint, Prettier, Husky + lint-staged) are mandatory slots — but their exact configs are researched, not hardcoded
 - Free or generous free-tier tooling is always preferred; paid-only tools are flagged
 - Complexity matches stated scale — no Kafka for a solo side project
@@ -21,93 +24,170 @@ A single Claude Code skill (`project-setup`) that guides any user through bootst
 ## Architecture
 
 ```
-Phase 0+1: Discovery + Wizard  (main session — AskUserQuestion)
-           │
-           └─► project profile struct
+Pre-flight      Check git / gh CLI / context7 → create GitHub repo
                       │
-Phase 2:   Research Agent  (subagent — web search + context7 if available)
-           │
-           └─► ranked tool recommendations per category
+Phase 0:        Anchor questions (4–5 questions max)
                       │
-           Main session assembles proposed stack
-           (guardrails injected as mandatory slots)
+                Inference engine → proposed stack draft
                       │
-Phase 3:   Validator Agent  (subagent — reasoning only, no re-research)
-           │
-           └─► per-tool verdict: ✓ / ⚠ / ✗ with notes
+Phase 1:        Targeted clarifiers (only what can't be inferred)
                       │
-           Main session applies fixes (swap ✗, annotate ⚠)
+                Confirmation summary → user corrects if needed
                       │
-Phase 4:   Pre-output checks → Output generation
+Phase 2:        Research Agent  (subagent — web search + context7 if available)
+                      │
+                Main session assembles proposed stack
+                (guardrails injected as mandatory slots)
+                      │
+Phase 3:        Validator Agent  (subagent — reasoning only, no re-research)
+                      │
+                Conflict resolution  (swap ✗ → re-check → ask user if still ⚠/✗)
+                      │
+Phase 4:        Output generation
 ```
 
 ---
 
-## Phase 0: App Discovery
+## Pre-flight
 
-Asked before any tool questions. Plain-language questions about behavior — the skill infers which tool categories to unlock from the answers. Users are not expected to know technical terms.
+Run before any questions. Never let the user answer a long wizard then hit a blocker at the end.
 
-| # | Question | Derives |
-|---|----------|---------|
-| D1 | What kind of app is this? (SaaS / marketplace / internal tool / content site / API service / mobile app / not sure) | complexity baseline, project type |
-| D2 | Will users have accounts? | auth, session management |
-| D3 | Will the app accept payments? | payments, webhooks for payment events |
-| D4 | Will the app send notifications to users? (email / push / SMS / none / not sure) | transactional email, push service |
-| D5 | Will the app store files or images? | object storage (R2, S3, Uploadthing) |
-| D6 | Will the app have real-time features? (e.g. live updates, chat, collaborative editing) | websockets, SSE, pub/sub |
-| D7 | Will the app connect to external services? (receive events from them / send data to them / both / neither) | webhook handling, API integration layer |
-| D8 | Does your app need to run work outside of a user's request? Scheduled/recurring tasks that run even when no user is active (e.g. nightly reports, cleanup jobs) — or — heavy processing too slow to block a user (e.g. image resizing, PDF generation). Options: scheduled only / heavy processing only / both / no | job queue, cron, worker tooling |
-| D9 | What's the expected scale at launch? (prototype / MVP for real users / production from day one) | complexity tier for all recommendations |
+```
+1. git installed?
+   → if no: hard stop — "Please install git first, then re-run this skill"
+
+2. gh CLI installed?
+   → if no: "gh CLI not found. Install it with `brew install gh` then run `gh auth login`"
+   → wait for user to confirm before continuing
+
+3. context7 MCP installed?
+   → ask user yes/no
+   → stored in session; used by all per-issue research passes later
+
+4. Create GitHub repo now?
+   → ask repo name + visibility (public / private)
+   → `gh repo create <name> --public/--private`
+   → if user skips: output will be SETUP.md only (no issues to link)
+```
 
 ---
 
-## Phase 1: Tool Wizard
+## Phase 0: Anchor Questions
 
-Only questions that cannot be inferred from Phase 0. Conditional branches are gated on project type and Phase 0 answers.
+Four to five questions maximum. These are the highest-signal inputs — most of the stack can be inferred from them.
 
-**Always asked:**
-1. Project type — web frontend / backend API / full-stack / mobile (multiselect)
-2. Primary language — TypeScript/JS / Python / Go / other
-3. Runtime / bundler — Node / Bun / Deno; for web also: Vite / Turbopack / Webpack
-4. Team size — solo / 2–5 / larger
-5. Output format preference — GitHub Issues / SETUP.md
+```
+A1. What kind of app is this?
+    → SaaS / marketplace / internal tool / content site / API service / mobile app / not sure
+    (derives: complexity baseline, likely framework family)
 
-**If web or full-stack:**
-6. Frontend framework — React / Vue / Svelte / other
-7. SSR / routing — Next.js / Remix / SvelteKit / SPA only
-8. UI component library? — yes / no
-9. CSS approach — Tailwind / CSS Modules / styled-components / none
-10. State management — server state only / client state too / not sure
+A2. Deployment target?
+    → Vercel / Railway / Fly.io / AWS / self-hosted / not decided
+    (derives: edge vs server runtime, cron availability, observability approach)
+    WHY EARLY: Vercel Hobby → no real cron; Railway → no edge functions;
+               self-hosted → different observability stack entirely
 
-**If backend or full-stack:**
-11. API style — REST / GraphQL / tRPC / other
-12. Database type — SQL / NoSQL / both / no
+A3. Primary language?
+    → TypeScript/JS / Python / Go / other
+    (skip if already obvious from A1 — e.g. "Next.js SaaS" implies TS)
 
-**If database selected:**
-13. ORM / query layer — yes (suggest options) / raw queries / not sure
+A4. Project scale + team size?
+    → prototype (solo) / MVP for real users (small team) / production from day one (larger team)
+    (derives: complexity tier for all recommendations)
 
-**Always (if backend or full-stack or any server):**
-14. Testing scope — unit only / unit + integration / + e2e
+A5. One-line description of what the app does?
+    → free text — used by the inference engine and passed to the research agent
+```
 
-**If mobile:**
-15. Target platforms — iOS / Android / both
-16. Framework preference — React Native / Flutter / Expo / no preference
+---
 
-**Observability (always asked):**
-17. Error tracking? — yes / no / not sure
-18. Structured logging? — yes / no
-19. Analytics? — yes / no / not sure
-20. Monitoring / APM? — yes / no / not sure
+## Inference Engine
 
-**Always last:**
-21. Deployment target — Vercel / Fly.io / Railway / AWS / self-hosted / not decided
-22. Any specific tools already decided? — open text
+After Phase 0, the skill builds a proposed stack draft by applying inference rules before asking anything else. Examples:
+
+| Anchor combination | Inferred (high confidence) |
+|---|---|
+| SaaS + Vercel + TS | Next.js, React, Turbopack, Tailwind |
+| SaaS + Vercel + TS | Vitest (unit), Playwright (e2e) |
+| API service + Railway + TS | Node, Express or Hono, no edge functions |
+| API service + Railway + Python | FastAPI, Ruff, mypy, pytest |
+| Mobile app | React Native / Expo (if TS), Flutter (if not sure) |
+| Prototype + solo | lightweight tools over enterprise ones across all categories |
+| Production from day one | error tracking and structured logging flagged as recommended |
+
+Inferences are probabilistic, not absolute — they go into the confirmation summary where the user can correct them.
+
+---
+
+## Phase 1: Targeted Clarifiers
+
+Only ask what the inference engine genuinely cannot determine. Typically 5–8 questions after inference, not 22.
+
+```
+For each of the following, only ask if NOT already inferable:
+
+  - Auth needed?
+    (skip if "SaaS" or "marketplace" was chosen — assume yes)
+
+  - Database needed? SQL / NoSQL / both?
+    (skip if "API service" + one-line description makes it obvious)
+
+  - ORM / query layer?
+    (only if database = yes)
+
+  - Will the app accept payments?
+
+  - Will users receive notifications? (email / push / SMS / none)
+
+  - Will the app store files or images?
+
+  - Real-time features? (live updates, chat, collaborative editing)
+
+  - Connect to external services?
+    (receive events from them / send data to them / both / neither)
+
+  - Background work outside a user's request?
+    Scheduled/recurring (e.g. nightly reports, cleanup jobs)
+    — or — heavy processing too slow to block a user (e.g. image resizing, PDF generation)
+    Options: scheduled only / heavy processing only / both / no
+
+  - Error tracking? Structured logging? Analytics? Monitoring?
+    (collapse into one multi-select if scale = prototype — skip unless explicitly yes)
+```
+
+---
+
+## Confirmation Summary
+
+Before dispatching any subagent, show the full inferred + answered stack in one message:
+
+```
+Here's what I'm working with — correct anything that looks wrong:
+
+  Runtime:       Node (Bun available as alternative)
+  Framework:     Next.js 14 (App Router)
+  Language:      TypeScript (strict)
+  Bundler:       Turbopack
+  CSS:           Tailwind v4
+  Testing:       Vitest + Playwright
+  Auth:          ✓ (tool TBD — researching)
+  Database:      PostgreSQL (tool TBD)
+  ORM:           ✓ (tool TBD)
+  Payments:      ✓ (tool TBD)
+  Background:    scheduled jobs
+  Deployment:    Vercel
+  Guardrails:    ESLint, Prettier, Husky + lint-staged (always on)
+
+  Anything to change before I start researching?
+```
+
+User can say "switch bundler to Vite" or "no payments" and the profile updates. Only after confirmation does the research agent run.
 
 ---
 
 ## Phase 2: Research Agent
 
-**Input:** Full project profile from Phase 0 + Phase 1  
+**Input:** Confirmed project profile  
 **Constraint:** "Prefer free or generous free-tier tools. Clearly flag paid-only tiers."  
 **Approach:** Use context7 if available, otherwise web search.
 
@@ -120,33 +200,33 @@ Only questions that cannot be inferred from Phase 0. Conditional branches are ga
 | Prettier | Current version, relevant plugins (e.g. prettier-plugin-tailwind) |
 | Pre-commit hooks | Husky + lint-staged current setup pattern vs alternatives (lefthook) |
 
-### Conditional categories (unlocked by Phase 0/1 answers):
+### Conditional categories (unlocked by confirmed profile):
 
 | Category | Condition |
 |----------|-----------|
-| Frontend framework | if not already decided |
-| UI component library | if yes in wizard |
+| Frontend framework | if not already confirmed |
+| UI component library | if requested |
 | CSS tooling | if Tailwind: plugins, v3 vs v4 considerations |
-| Auth | if D2 = yes |
+| Auth | if needed |
 | State management | if client state needed |
-| Database | if D2/D3/D7 or explicit yes |
+| Database | if needed |
 | ORM / query layer | if database selected |
 | API style tooling | tRPC setup, GraphQL codegen, etc. |
-| Object storage | if D5 = yes |
-| Real-time / WebSockets | if D6 = yes |
-| Webhook handling | if D7 = receive events |
-| Background jobs / queues | if D8 = heavy processing or both |
-| Cron / scheduled tasks | if D8 = scheduled or both |
-| Payments | if D3 = yes |
-| Transactional email | if D4 includes email |
-| Push notifications | if D4 includes push |
-| SMS | if D4 includes SMS |
-| Error tracking | if selected in wizard |
-| Structured logging | if selected in wizard |
-| Analytics | if selected in wizard |
-| Monitoring / APM | if selected in wizard |
-| Testing | always for any project with a server; implied for frontend (Vitest + Playwright) |
-| Deployment | if not decided, suggest based on stack + free tier |
+| Object storage | if files/images needed |
+| Real-time / WebSockets | if real-time needed |
+| Webhook handling | if receiving external events |
+| Background jobs / queues | if heavy processing needed |
+| Cron / scheduled tasks | if scheduled work needed |
+| Payments | if needed |
+| Transactional email | if email notifications needed |
+| Push notifications | if push needed |
+| SMS | if SMS needed |
+| Error tracking | if selected |
+| Structured logging | if selected |
+| Analytics | if selected |
+| Monitoring / APM | if selected |
+| Testing | always |
+| Deployment tooling | if deployment target needs specific setup |
 | Mobile framework | if mobile |
 
 ### Output format per tool:
@@ -179,6 +259,7 @@ One entry per category. Alternatives noted but not expanded.
 - Known bad pairings (e.g. ESLint 9 flat config vs plugins that only support legacy config)
 - Runtime conflicts (e.g. Bun + tools with Node-only native deps)
 - Framework version alignment (e.g. Next.js version vs React version)
+- Deployment constraint violations (e.g. cron tool chosen but deployment is Vercel Hobby)
 
 **Maintenance:**
 - Flag unmaintained or deprecated tools
@@ -206,18 +287,34 @@ One entry per category. Alternatives noted but not expanded.
 { "tool": "ESLint 9", "verdict": "⚠", "note": "Use eslint-config-prettier, not prettier-eslint (flat config incompatibility)" }
 ```
 
-Red (✗) items are swapped before output. Yellow (⚠) items get a warning note attached to their issue/todo.
+---
+
+## Conflict Resolution
+
+After the validator runs, apply fixes in this order:
+
+```
+FOR EACH ✗ tool:
+  1. Auto-swap to the research agent's top alternative
+  2. Re-run validator logic on the swapped tool (inline, no new subagent)
+  3a. If swap is ✓ → proceed silently
+  3b. If swap is still ⚠ → present to user:
+        "I'd recommend [alternative] but it has a warning: [note].
+         Other options: [A], [B]. Which do you prefer?"
+  3c. If swap is also ✗ → always ask user:
+        "No clean alternative found for [category]. Here are the options:
+         [A] — [tradeoff], [B] — [tradeoff]. Which do you want?"
+
+FOR EACH ⚠ tool (that wasn't already resolved above):
+  → Attach warning note to the issue/todo — do NOT silently swap
+  → User sees it when they work on that issue
+```
+
+Silent swaps only happen when the replacement is a clean ✓. Any unresolved uncertainty goes to the user — never hidden.
 
 ---
 
 ## Phase 4: Output Generation
-
-### Pre-output checks (in order):
-
-1. **git installed?** — if no, hard stop: tell user to install git first
-2. **gh CLI installed?** — if no, prompt: `brew install gh` then `gh auth login`
-3. **context7 installed?** — ask user yes/no; stored in session for all per-issue research
-4. **Create GitHub repo?** — `gh repo create <name>` with visibility preference (public/private)
 
 ### First issue is always git — hardcoded, never researched:
 ```
@@ -253,13 +350,13 @@ Body:
 
 ## Guardrails (always required)
 - [ ] git — initialize repository
-- [ ] TypeScript (strict) ...
-- [ ] ESLint ...
-- [ ] Prettier ...
-- [ ] Husky + lint-staged ...
+- [ ] TypeScript (strict)
+- [ ] ESLint
+- [ ] Prettier
+- [ ] Husky + lint-staged
 
 ## Database
-- [ ] Drizzle ORM ...
+- [ ] Drizzle ORM
 
 ## Auth
 - [ ] ...
