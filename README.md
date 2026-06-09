@@ -4,7 +4,7 @@ A collection of Claude Code skills for bootstrapping and maintaining TypeScript 
 
 ## Skills
 
-### `project-setup`
+### `boilerplate`
 
 Bootstraps a new TypeScript project from scratch. Asks a handful of questions about what you're building, writes a project context doc for you to review, then spawns a research subagent to find the current best tools for your specific stack — not a pre-printed list, but live web research. A validator subagent cross-checks compatibility and cost before anything is created.
 

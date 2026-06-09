@@ -1,5 +1,5 @@
 ---
-name: project-setup
+name: boilerplate
 description: TypeScript project bootstrapper. Asks a handful of questions, writes a project context doc for your review, then researches and validates a full tool stack via subagents. Outputs GitHub issues or a SETUP.md to work through.
 ---
 
